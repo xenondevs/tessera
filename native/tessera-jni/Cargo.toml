@@ -1,0 +1,15 @@
+[package]
+name = "tessera-jni"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tessera = { path = "../tessera" }
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+mimalloc = { version = "0.1", features = ["local_dynamic_tls"] }
+[target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
+mimalloc = "0.1"

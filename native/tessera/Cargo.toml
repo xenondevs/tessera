@@ -1,0 +1,28 @@
+[package]
+name = "tessera"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dashmap = "6"
+foldhash = "0"
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+libdeflater = "1"
+memmap2 = "0.9"
+rawzip = "0.5"
+rayon = "1"
+regex = "1"
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+serde = { version = "1", features = ["derive"] }
+simd-json = "0.18"
+tessera-derive = { path = "../tessera-derive" }
+thiserror = "2"
+tokio = { version = "1", default-features = false, features = ["fs", "macros", "rt-multi-thread", "sync"] }
+ultraviolet = "0.10"
+
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+mimalloc = { version = "0.1", features = ["local_dynamic_tls"] }
+[target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
+mimalloc = "0.1"

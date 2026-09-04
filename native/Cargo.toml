@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+
+members = [
+    "tessera",
+    "tessera-jni",
+    "tessera-derive",
+]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

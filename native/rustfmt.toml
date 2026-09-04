@@ -1,0 +1,13 @@
+style_edition = "2024"
+
+max_width = 110
+chain_width = 75
+single_line_let_else_max_width = 75
+struct_lit_width = 60
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Auto"
+short_array_element_width_threshold = 20
+
+reorder_modules = false
+reorder_imports = true
