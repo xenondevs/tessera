@@ -7,7 +7,7 @@ use crate::resource::model::element::{Element, Face, ShadeDirection};
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use crate::util::FastHashMap;
 use std::sync::Arc;
-use ultraviolet::{Mat3, Vec3};
+use ultraviolet::{Mat3, Vec2, Vec3};
 
 /// Corner index bits: bit-0 = x, bit-1 = y, bit-2 = z
 /// todo, change to Direction::ALL map once https://github.com/rust-lang/rust/issues/143874 is stable
@@ -79,6 +79,27 @@ impl ScreenQuad {
             kind: surface.kind,
         }
     }
+
+    pub(crate) fn rescale(&mut self, rescale: Rescale) {
+        let corner = |offset: [f32; 2]| {
+            let moved = rescale.apply([self.origin[0] + offset[0], self.origin[1] + offset[1]]);
+            [subpixel_snap(moved[0]), subpixel_snap(moved[1])]
+        };
+        let origin = corner([0.0, 0.0]);
+        let end_u = corner(self.edges[0]);
+        let end_v = corner(self.edges[1]);
+        let edge_u = [end_u[0] - origin[0], end_u[1] - origin[1]];
+        let edge_v = [end_v[0] - origin[0], end_v[1] - origin[1]];
+        let inv_det = 1.0 / (edge_u[0] * edge_v[1] - edge_u[1] * edge_v[0]);
+        self.origin = origin;
+        self.edges = [edge_u, edge_v];
+        self.inverse = [
+            edge_v[1] * inv_det,
+            -edge_v[0] * inv_det,
+            -edge_u[1] * inv_det,
+            edge_u[0] * inv_det,
+        ];
+    }
 }
 
 #[inline(always)]
@@ -87,12 +108,55 @@ pub(crate) fn edge_det(corners: &[[f32; 3]; 3]) -> f32 {
     (end_u[0] - origin[0]) * (end_v[1] - origin[1]) - (end_u[1] - origin[1]) * (end_v[0] - origin[0])
 }
 
+#[derive(Copy, Clone)]
+pub(crate) struct Rescale {
+    zoom: f32,
+    offset: [f32; 2],
+}
+
+impl Rescale {
+    pub(crate) fn fit(quads: &[ScreenQuad], size: f32, margin: f32) -> Rescale {
+        let (mut min, mut max) = (Vec2::broadcast(f32::MAX), Vec2::broadcast(f32::MIN));
+        for quad in quads {
+            let origin = Vec2::from(quad.origin);
+            let [u, v] = quad.edges.map(Vec2::from);
+            let corners = [origin, origin + u, origin + v, origin + u + v];
+            let count = match quad.kind {
+                QuadKind::Parallelogram => 4,
+                QuadKind::Triangle => 3,
+            };
+            for pos in &corners[..count] {
+                min = min.min_by_component(*pos);
+                max = max.max_by_component(*pos);
+            }
+        }
+
+        let extent = (max - min).component_max().max(f32::EPSILON);
+        let zoom = size * (1.0 - 2.0 * margin) / extent;
+        let center = (min + max) * 0.5;
+        Rescale {
+            zoom,
+            offset: [size * 0.5 - center.x * zoom, size * 0.5 - center.y * zoom],
+        }
+    }
+
+    fn apply(&self, point: [f32; 2]) -> [f32; 2] {
+        let [px, py] = point;
+        let [ox, oy] = self.offset;
+        [px * self.zoom + ox, py * self.zoom + oy]
+    }
+}
+
+#[inline(always)]
+fn subpixel_snap(v: f32) -> f32 {
+    (v * SUBPIXEL).round() / SUBPIXEL
+}
+
 #[inline(always)]
 pub(crate) fn to_screen(point: Vec3, size: f32) -> [f32; 3] {
-    let snap = |v: f32| (v * SUBPIXEL).round() / SUBPIXEL;
     [
-        snap((0.5 + point.x) * size),
-        snap((0.5 - point.y) * size),
+        subpixel_snap((0.5 + point.x) * size),
+        subpixel_snap((0.5 - point.y) * size),
         -point.z,
     ]
 }
@@ -105,11 +169,7 @@ pub struct Affine {
 impl Affine {
     pub(crate) const fn identity() -> Self {
         Self {
-            linear: Mat3::new(
-                Vec3::new(1.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
-                Vec3::new(0.0, 0.0, 1.0),
-            ),
+            linear: Mat3::new(Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 0.0, 1.0)),
             translation: Vec3::new(0.0, 0.0, 0.0),
         }
     }
@@ -149,29 +209,17 @@ const fn cos_sin(q: Quadrant) -> (f32, f32) {
 
 const fn rot_x(q: Quadrant) -> Mat3 {
     let (c, s) = cos_sin(q);
-    Mat3::new(
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(0.0, c, s),
-        Vec3::new(0.0, -s, c),
-    )
+    Mat3::new(Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, c, s), Vec3::new(0.0, -s, c))
 }
 
 const fn rot_y(q: Quadrant) -> Mat3 {
     let (c, s) = cos_sin(q);
-    Mat3::new(
-        Vec3::new(c, 0.0, -s),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(s, 0.0, c),
-    )
+    Mat3::new(Vec3::new(c, 0.0, -s), Vec3::new(0.0, 1.0, 0.0), Vec3::new(s, 0.0, c))
 }
 
 const fn rot_z(q: Quadrant) -> Mat3 {
     let (c, s) = cos_sin(q);
-    Mat3::new(
-        Vec3::new(c, s, 0.0),
-        Vec3::new(-s, c, 0.0),
-        Vec3::new(0.0, 0.0, 1.0),
-    )
+    Mat3::new(Vec3::new(c, s, 0.0), Vec3::new(-s, c, 0.0), Vec3::new(0.0, 0.0, 1.0))
 }
 
 /// [order ref](https://mcsrc.dev/2/26.2/com/mojang/math/Quadrant#L57)
@@ -254,7 +302,7 @@ fn uv_corners(face: &Face, lock: Option<Mat3>) -> [[f32; 2]; 4] {
     corners
 }
 
-pub fn project(
+pub(crate) fn project(
     elements: &[Element],
     textures: &FastHashMap<String, Arc<Sprite>>,
     tints: &[u32],
@@ -314,9 +362,7 @@ pub fn project(
             let uv = uv_corners(face, locks[i]);
             let shade = match el.shade_direction {
                 ShadeDirection::Override(dir) => dir,
-                ShadeDirection::Actual => {
-                    closest_direction(normal_mat * facing.unit()).unwrap_or(Direction::Up)
-                }
+                ShadeDirection::Actual => closest_direction(normal_mat * facing.unit()).unwrap_or(Direction::Up),
             };
             let sprite = textures.get(&face.texture).unwrap_or(missing_sprite()).clone();
             let surface = Surface {

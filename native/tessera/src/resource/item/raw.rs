@@ -225,7 +225,9 @@ impl<'de> Deserialize<'de> for RawRgbValue {
             type Value = RawRgbValue;
 
             fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("an rgb value encoded in an integer or a 3-element array of floats for each color component (0.0-1.0)")
+                formatter.write_str(
+                    "an rgb value encoded in an integer or a 3-element array of floats for each color component (0.0-1.0)",
+                )
             }
 
             fn visit_i64<E: Error>(self, v: i64) -> Result<Self::Value, E> {

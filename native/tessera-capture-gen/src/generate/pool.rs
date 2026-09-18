@@ -166,8 +166,7 @@ fn local_material(count: usize, raw: u32, path: &Path) -> Result<u8, GenerateErr
 
 impl Pools {
     pub(super) fn block(&mut self, file: &RawBlockFile, path: &Path) -> Result<(), GenerateError> {
-        let (namespace, block_path) =
-            file.block.split_once(':').unwrap_or_else(|| ("minecraft", &file.block));
+        let (namespace, block_path) = file.block.split_once(':').unwrap_or_else(|| ("minecraft", &file.block));
         let grid = StateGrid::parse(file, path)?;
 
         let materials = file
@@ -198,9 +197,7 @@ impl Pools {
         let states: Vec<State> = collapsed
             .into_iter()
             // miss already means draw the pack model
-            .filter(|(_, record)| {
-                record.render_shape != RenderShape::Model || !draws.items[record.draws].is_empty()
-            })
+            .filter(|(_, record)| record.render_shape != RenderShape::Model || !draws.items[record.draws].is_empty())
             .map(|(key, record)| State { key, render_shape: record.render_shape, draws: record.draws })
             .collect();
 
@@ -235,9 +232,7 @@ impl Pools {
             .windows(2)
             .find(|pair| (&pair[0].namespace, &pair[0].path) == (&pair[1].namespace, &pair[1].path));
         if let Some(dupe) = dupe {
-            return Err(GenerateError::DuplicateBlock {
-                id: format!("{}:{}", dupe[0].namespace, dupe[0].path),
-            });
+            return Err(GenerateError::DuplicateBlock { id: format!("{}:{}", dupe[0].namespace, dupe[0].path) });
         }
         Ok(())
     }
@@ -251,17 +246,11 @@ impl Pools {
                 let id = file_path
                     .strip_prefix("textures/")
                     .and_then(|path| path.strip_suffix(".png"))
-                    .ok_or_else(|| {
-                        invalid(format!(
-                            "invalid texture path: {path} (not in textures/**.png format)"
-                        ))
-                    })?;
+                    .ok_or_else(|| invalid(format!("invalid texture path: {path} (not in textures/**.png format)")))?;
                 format!("{namespace}:{id}")
             }
             _ => {
-                return Err(invalid(
-                    "a texture needs either a sprite or a path, but not both".to_string(),
-                ));
+                return Err(invalid("a texture needs either a sprite or a path, but not both".to_string()));
             }
         };
         let tint_color = match &raw.tint_color {
@@ -297,12 +286,7 @@ impl Pools {
         self.poses.pool(pose.map(FloatingBits::from))
     }
 
-    fn draw(
-        &mut self,
-        submission: &RawSubmission,
-        materials: usize,
-        path: &Path,
-    ) -> Result<Draw, GenerateError> {
+    fn draw(&mut self, submission: &RawSubmission, materials: usize, path: &Path) -> Result<Draw, GenerateError> {
         let (order, pose, geometry) = match submission {
             RawSubmission::Model { order, material, pose, parts } => (
                 *order,
@@ -360,12 +344,7 @@ impl Pools {
         Ok(self.parts.pool(records))
     }
 
-    fn block_model_quads(
-        &mut self,
-        quads: &[RawQuad],
-        materials: usize,
-        path: &Path,
-    ) -> Result<usize, GenerateError> {
+    fn block_model_quads(&mut self, quads: &[RawQuad], materials: usize, path: &Path) -> Result<usize, GenerateError> {
         let invalid = |message: String| GenerateError::Invalid { path: path.to_owned(), message };
         let mut records = Vec::with_capacity(quads.len());
 
@@ -375,10 +354,7 @@ impl Pools {
                 QuadKind::Triangle => 3,
             };
             if quad.positions.len() != vertices || quad.uvs.len() != vertices {
-                return Err(invalid(format!(
-                    "A {:?} needs {vertices} positions and uvs)",
-                    quad.kind
-                )));
+                return Err(invalid(format!("A {:?} needs {vertices} positions and uvs)", quad.kind)));
             }
 
             records.push(Quad {

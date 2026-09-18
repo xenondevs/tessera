@@ -60,12 +60,7 @@ impl Diagnostics {
 
     /// Degraded but rendered
     #[track_caller]
-    pub fn warn_keyed<M: Into<Cow<'static, str>>>(
-        &self,
-        subject: impl Display,
-        key: impl Display,
-        message: impl FnOnce() -> M,
-    ) {
+    pub fn warn_keyed<M: Into<Cow<'static, str>>>(&self, subject: impl Display, key: impl Display, message: impl FnOnce() -> M) {
         self.record(Severity::Warning, Location::caller(), subject, key, message);
     }
 

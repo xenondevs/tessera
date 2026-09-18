@@ -22,7 +22,9 @@ pub fn lookup(block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Opt
 
 pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<Capture<'a>> {
     let wanted = (block.namespace.as_ref(), block.path.as_ref());
-    let entry = blocks[blocks.binary_search_by(|entry| (entry.namespace, entry.path).cmp(&wanted)).ok()?];
+    let entry = blocks[blocks
+        .binary_search_by(|entry| (entry.namespace, entry.path).cmp(&wanted))
+        .ok()?];
 
     let mut key = String::new();
     for prop in entry.properties {
@@ -38,6 +40,9 @@ pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery
         key.push_str(value);
     }
 
-    let idx = entry.states.binary_search_by(|state| (*state.key).cmp(key.as_str())).ok()?;
+    let idx = entry
+        .states
+        .binary_search_by(|state| (*state.key).cmp(key.as_str()))
+        .ok()?;
     Some(Capture { block: entry, state: &entry.states[idx] })
 }

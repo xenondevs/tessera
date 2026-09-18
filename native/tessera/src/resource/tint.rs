@@ -65,10 +65,7 @@ impl ColorMaps {
     ];
 
     pub async fn load(rm: &ResourceManager, diag: &Diagnostics) -> Self {
-        fn fill(
-            pixels: &mut [u32; COLOR_MAP_SIZE * COLOR_MAP_SIZE],
-            bytes: Option<Cow<'static, [u8]>>,
-        ) -> Result<(), String> {
+        fn fill(pixels: &mut [u32; COLOR_MAP_SIZE * COLOR_MAP_SIZE], bytes: Option<Cow<'static, [u8]>>) -> Result<(), String> {
             let bytes = bytes.ok_or("No known pack provided the color map")?;
             let image = image::load_from_memory(&bytes).map_err(|e| e.to_string())?.into_rgba8();
 
@@ -95,9 +92,7 @@ impl ColorMaps {
         let [grass, foliage, dry_foliage] = Self::MAPS.map(|(path, default)| {
             let mut pixels = Box::new([default; COLOR_MAP_SIZE * COLOR_MAP_SIZE]);
             if let Err(e) = fill(&mut pixels, bytes.remove(0)) {
-                diag.error(path, || {
-                    format!("Failed to load color map image: {e} (using default color)")
-                });
+                diag.error(path, || format!("Failed to load color map image: {e} (using default color)"));
             }
             ColorMap { pixels, default }
         });

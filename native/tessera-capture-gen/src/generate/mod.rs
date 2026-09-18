@@ -25,11 +25,7 @@ pub enum GenerateError {
     #[error("{} has wrong format number {found}, expected {FORMAT}", .path.display())]
     Format { path: PathBuf, found: u32 },
     #[error("{} has wrong minecraft version {found}, expected {expected}", .path.display())]
-    MinecraftVersion {
-        path: PathBuf,
-        found: String,
-        expected: String,
-    },
+    MinecraftVersion { path: PathBuf, found: String, expected: String },
     #[error("Unexpected discards:\n{0}")]
     UnexpectedDiscards(String),
     #[error("{} is invalid: {message}", .path.display())]
@@ -40,8 +36,7 @@ pub enum GenerateError {
 
 pub fn generate(input: &Path, minecraft_version: &str, out: &Path) -> Result<Vec<String>, GenerateError> {
     fn parse<T: DeserializeOwned>(path: &Path) -> Result<T, GenerateError> {
-        let mut bytes =
-            fs::read(path).map_err(|err| GenerateError::Io { path: path.to_owned(), source: err })?;
+        let mut bytes = fs::read(path).map_err(|err| GenerateError::Io { path: path.to_owned(), source: err })?;
         simd_json::serde::from_slice(&mut bytes)
             .map_err(|err| GenerateError::Parse { path: path.to_owned(), message: err.to_string() })
     }
@@ -109,7 +104,6 @@ pub fn generate(input: &Path, minecraft_version: &str, out: &Path) -> Result<Vec
 
     pools.finish()?;
     let generated = out.join("capture.rs");
-    fs::write(&generated, emit::emit(&pools))
-        .map_err(|err| GenerateError::Io { path: generated, source: err })?;
+    fs::write(&generated, emit::emit(&pools)).map_err(|err| GenerateError::Io { path: generated, source: err })?;
     Ok(stale)
 }

@@ -24,18 +24,13 @@ impl Catalog {
     }
 
     pub async fn prime_all(&self, caches: &Caches) {
-        let items_fut = caches.items.prime(
-            &caches.resources,
-            &caches.models,
-            &self.items,
-            caches.diagnostics(),
-        );
-        let block_states_fut = caches.block_states.prime(
-            &caches.resources,
-            &caches.models,
-            &self.block_states,
-            caches.diagnostics(),
-        );
+        let items_fut = caches
+            .items
+            .prime(&caches.resources, &caches.models, &self.items, caches.diagnostics());
+        let block_states_fut =
+            caches
+                .block_states
+                .prime(&caches.resources, &caches.models, &self.block_states, caches.diagnostics());
         tokio::join!(items_fut, block_states_fut);
         caches.models.prime_textures(&caches.resources, &caches.textures).await;
     }

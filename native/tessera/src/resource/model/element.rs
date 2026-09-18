@@ -141,11 +141,7 @@ fn apply_rescale(rot: Mat3) -> Mat3 {
         let t = rot * u;
         1.0 / t.x.abs().max(t.y.abs()).max(t.z.abs())
     };
-    let scale = Vec3::new(
-        factor(Vec3::unit_x()),
-        factor(Vec3::unit_y()),
-        factor(Vec3::unit_z()),
-    );
+    let scale = Vec3::new(factor(Vec3::unit_x()), factor(Vec3::unit_y()), factor(Vec3::unit_z()));
 
     rot * Mat3::from_nonuniform_scale(scale)
 }

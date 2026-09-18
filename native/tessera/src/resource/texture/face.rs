@@ -7,11 +7,7 @@ use ultraviolet::Vec3;
 pub struct RawFace {
     pub texture: String,
     pub uv: Option<[f32; 4]>,
-    #[serde(
-        rename = "cullface",
-        default,
-        deserialize_with = "deserialize_lenient_cull_face"
-    )]
+    #[serde(rename = "cullface", default, deserialize_with = "deserialize_lenient_cull_face")]
     pub cull_face: Option<Direction>,
     #[serde(default)]
     pub rotation: Quadrant,
@@ -20,9 +16,7 @@ pub struct RawFace {
 }
 
 /// mojang handles unknown face names as dont cull instead of throwing an error
-fn deserialize_lenient_cull_face<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Direction>, D::Error> {
+fn deserialize_lenient_cull_face<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Direction>, D::Error> {
     let name = <&str>::deserialize(deserializer)?;
     Ok(Direction::deserialize(IntoDeserializer::<value::Error>::into_deserializer(name)).ok())
 }

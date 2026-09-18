@@ -1,7 +1,6 @@
 use super::element::Face;
 use super::{
-    Element, GuiLight, Model, ModelError, RawModel, ShadeDirection, SlotContents, UnresolvedGeometry,
-    UnresolvedModel, collapse,
+    Element, GuiLight, Model, ModelError, RawModel, ShadeDirection, SlotContents, UnresolvedGeometry, UnresolvedModel, collapse,
 };
 use crate::diagnostics::Diagnostics;
 use crate::direction::{Direction, Quadrant};
@@ -37,19 +36,11 @@ pub struct ModelCache {
 impl ModelCache {
     pub fn new() -> Self {
         let unresolved = FastDashMap::default();
-        unresolved.insert(
-            ResourceId::new_const("minecraft", "builtin/generated"),
-            generated_item(),
-        );
+        unresolved.insert(ResourceId::new_const("minecraft", "builtin/generated"), generated_item());
         Self { unresolved, resolved: FastDashMap::default() }
     }
 
-    pub async fn prime(
-        &self,
-        rm: &ResourceManager,
-        roots: impl IntoIterator<Item = ResourceId>,
-        diag: &Diagnostics,
-    ) {
+    pub async fn prime(&self, rm: &ResourceManager, roots: impl IntoIterator<Item = ResourceId>, diag: &Diagnostics) {
         let mut seen = FastHashSet::new();
         let mut batch: Vec<ResourceId> = roots.into_iter().collect();
 
@@ -83,13 +74,9 @@ impl ModelCache {
         }
     }
 
-    fn parse_model(
-        id: &ResourceId,
-        bytes: Option<Cow<'static, [u8]>>,
-    ) -> Result<UnresolvedModel, ModelError> {
+    fn parse_model(id: &ResourceId, bytes: Option<Cow<'static, [u8]>>) -> Result<UnresolvedModel, ModelError> {
         let mut bytes = bytes.ok_or_else(|| ModelError::NotFound(id.clone()))?.into_owned();
-        let raw: RawModel = simd_json::serde::from_slice(&mut bytes)
-            .map_err(|e| ModelError::Parse(id.clone(), e.to_string()))?;
+        let raw: RawModel = simd_json::serde::from_slice(&mut bytes).map_err(|e| ModelError::Parse(id.clone(), e.to_string()))?;
         UnresolvedModel::try_from(raw)
     }
 
@@ -118,12 +105,7 @@ impl ModelCache {
         ChainStop::Complete
     }
 
-    pub async fn chain(
-        &self,
-        rm: &ResourceManager,
-        id: &ResourceId,
-        diag: &Diagnostics,
-    ) -> Vec<Arc<UnresolvedModel>> {
+    pub async fn chain(&self, rm: &ResourceManager, id: &ResourceId, diag: &Diagnostics) -> Vec<Arc<UnresolvedModel>> {
         let mut chain = Vec::new();
         let mut seen = FastHashSet::new();
         let mut next = id.clone();
@@ -253,10 +235,7 @@ fn missing_unresolved() -> &'static Arc<UnresolvedModel> {
                 force_translucent: false,
             }),
         );
-        textures.insert(
-            "particle".to_string(),
-            SlotContents::Reference("missingno".to_string()),
-        );
+        textures.insert("particle".to_string(), SlotContents::Reference("missingno".to_string()));
 
         Arc::new(UnresolvedModel {
             parent: None,
@@ -289,10 +268,7 @@ fn missing_resolved() -> &'static Arc<Model> {
 
 fn generated_item() -> Arc<UnresolvedModel> {
     let mut textures = FastHashMap::new();
-    textures.insert(
-        "particle".to_string(),
-        SlotContents::Reference("layer0".to_string()),
-    );
+    textures.insert("particle".to_string(), SlotContents::Reference("layer0".to_string()));
     Arc::new(UnresolvedModel {
         parent: None,
         textures,

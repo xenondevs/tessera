@@ -7,6 +7,7 @@ pub mod blockstate;
 pub mod capture;
 
 use self::layered::Layer;
+use self::quad::Rescale;
 use self::rasterize::Target;
 use crate::capture::lookup::{Capture, lookup};
 use crate::diagnostics::Diagnostics;
@@ -37,6 +38,11 @@ pub enum RenderError {
     NotPrimed(ResourceId),
 }
 
+pub enum Framing {
+    Gui,
+    Fit { margin: f32 },
+}
+
 pub struct Renderer {
     caches: Caches,
 }
@@ -60,6 +66,7 @@ impl Renderer {
         id: &ResourceId,
         props: &str,
         size: u32,
+        framing: Framing,
     ) -> Result<RgbaImage, RenderError> {
         let query = blockstate::StateQuery::parse(props);
         let captured = lookup(id, &query, self.diagnostics());
@@ -79,7 +86,8 @@ impl Renderer {
         } else {
             Vec::new()
         };
-        self.geometry(&parts, captured, Self::tints_for_block(id), size, id).await
+        self.geometry(&parts, captured, Self::tints_for_block(id), size, framing, id)
+            .await
     }
 
     pub async fn render_item(&self, id: &ResourceId, size: u32) -> Result<RgbaImage, RenderError> {
@@ -113,19 +121,21 @@ impl Renderer {
             Geometry::Cuboid(_) => {
                 let part = ModelPart { model: model.clone(), state: ModelState::default() };
                 let resolved_tints = shade::tint_table(tints, &self.caches.color_maps.grass);
-                self.geometry(std::slice::from_ref(&part), None, &resolved_tints, size, subject)
-                    .await
+                self.geometry(
+                    std::slice::from_ref(&part),
+                    None,
+                    &resolved_tints,
+                    size,
+                    Framing::Gui,
+                    subject,
+                )
+                .await
             }
             Geometry::Empty => Err(RenderError::NoGeometry(subject.clone())),
         }
     }
 
-    async fn item_model(
-        &self,
-        node: &ItemModel,
-        size: u32,
-        subject: &ResourceId,
-    ) -> Result<RgbaImage, RenderError> {
+    async fn item_model(&self, node: &ItemModel, size: u32, subject: &ResourceId) -> Result<RgbaImage, RenderError> {
         let mut nodes = Vec::new();
         draw_order(node, &mut nodes);
         let Some((first, rest)) = nodes.split_first() else {
@@ -146,12 +156,7 @@ impl Renderer {
         layered::composite(&layers, size).ok_or_else(|| RenderError::NoGeometry(subject.clone()))
     }
 
-    async fn leaf(
-        &self,
-        node: &ItemModel,
-        size: u32,
-        subject: &ResourceId,
-    ) -> Result<RgbaImage, RenderError> {
+    async fn leaf(&self, node: &ItemModel, size: u32, subject: &ResourceId) -> Result<RgbaImage, RenderError> {
         match node {
             ItemModel::Model { model, tints } => self.model(model, tints, size, subject).await,
             // TODO: dump special models from mc
@@ -166,6 +171,7 @@ impl Renderer {
         captured: Option<Capture<'static>>,
         tints: &[u32],
         size: u32,
+        framing: Framing,
         subject: &ResourceId,
     ) -> Result<RgbaImage, RenderError> {
         let mut tables = Vec::with_capacity(parts.len());
@@ -177,7 +183,10 @@ impl Renderer {
             None => Vec::new(),
         };
         let (display, light) = parts.first().map_or((Transform::BLOCK_GUI, GuiLight::Side), |part| {
-            (part.model.display[DisplayContext::Gui as usize].unwrap_or(Transform::BLOCK_GUI), part.model.gui_light)
+            (
+                part.model.display[DisplayContext::Gui as usize].unwrap_or(Transform::BLOCK_GUI),
+                part.model.gui_light,
+            )
         });
         let shades = shade::shade_table(&display, light);
 
@@ -186,13 +195,25 @@ impl Renderer {
         for (part, textures) in parts.iter().zip(&tables) {
             if let Geometry::Cuboid(list) = &part.model.geometry {
                 elements += list.len();
-                quad::project(
-                    list, textures, tints, &part.state, &display, &shades, size, &mut quads,
-                );
+                quad::project(list, textures, tints, &part.state, &display, &shades, size, &mut quads);
             }
         }
         if let Some(cap) = captured {
-            elements += capture::project(cap, &captured_materials, &display, shade::lights(light), &shades, size, &mut quads);
+            elements += capture::project(
+                cap,
+                &captured_materials,
+                &display,
+                shade::lights(light),
+                &shades,
+                size,
+                &mut quads,
+            );
+        }
+        if let Framing::Fit { margin } = framing
+            && !quads.is_empty()
+        {
+            let rescale = Rescale::fit(&quads, size as f32, margin);
+            quads.iter_mut().for_each(|quad| quad.rescale(rescale));
         }
         if quads.is_empty() {
             return Err(RenderError::NoGeometry(subject.clone()));

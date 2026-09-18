@@ -47,12 +47,7 @@ pub(super) fn emit(pools: &Pools) -> String {
         if value < 0 { quote!(-#mag) } else { quote!(#mag) }
     }
 
-    fn runs<T>(
-        category: &str,
-        element: TokenStream,
-        pool: &[Vec<T>],
-        item: impl Fn(&T) -> TokenStream,
-    ) -> TokenStream {
+    fn runs<T>(category: &str, element: TokenStream, pool: &[Vec<T>], item: impl Fn(&T) -> TokenStream) -> TokenStream {
         let statics = pool.iter().enumerate().map(|(i, run)| {
             let name = static_name(category, i);
             let len = Literal::usize_unsuffixed(run.len());

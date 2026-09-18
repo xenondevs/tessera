@@ -173,13 +173,9 @@ impl TextureCache {
         }
     }
 
-    fn decode_image(
-        id: &ResourceId,
-        bytes: Option<Cow<'static, [u8]>>,
-    ) -> Result<Arc<RgbaImage>, TextureError> {
+    fn decode_image(id: &ResourceId, bytes: Option<Cow<'static, [u8]>>) -> Result<Arc<RgbaImage>, TextureError> {
         let bytes = bytes.ok_or_else(|| TextureError::NotFound(id.clone()))?;
-        let img =
-            image::load_from_memory(&bytes).map_err(|e| TextureError::Decode(id.clone(), e.to_string()))?;
+        let img = image::load_from_memory(&bytes).map_err(|e| TextureError::Decode(id.clone(), e.to_string()))?;
         Ok(Arc::new(img.into_rgba8()))
     }
 
@@ -200,13 +196,10 @@ impl TextureCache {
                 let r = Self::decode_image(&id, b);
                 (id, r)
             }),
-            rayon_batch(
-                palette_ids.iter().cloned().zip(palette_bytes).collect(),
-                |(id, b)| {
-                    let r = Self::decode_image(&id, b).map(|img| Palette::from_image(&img));
-                    (id, r)
-                }
-            ),
+            rayon_batch(palette_ids.iter().cloned().zip(palette_bytes).collect(), |(id, b)| {
+                let r = Self::decode_image(&id, b).map(|img| Palette::from_image(&img));
+                (id, r)
+            }),
         );
 
         (
@@ -256,17 +249,13 @@ impl TextureCache {
             SpriteRecipe::Region { base, x, y, width, height, div_x, div_y } => {
                 let img = Self::load_direct(rm, base).await?;
 
-                let (rx, ry, rw, rh) =
-                    match util::image::region_rect(&img, base, (*x, *y, *width, *height), *div_x, *div_y) {
-                        Ok(bounds) => bounds,
-                        Err(err) => {
-                            rm.diagnostics().warn(id, || err);
-                            return Err(TextureError::InvalidRegion {
-                                sprite: id.clone(),
-                                base: base.clone(),
-                            });
-                        }
-                    };
+                let (rx, ry, rw, rh) = match util::image::region_rect(&img, base, (*x, *y, *width, *height), *div_x, *div_y) {
+                    Ok(bounds) => bounds,
+                    Err(err) => {
+                        rm.diagnostics().warn(id, || err);
+                        return Err(TextureError::InvalidRegion { sprite: id.clone(), base: base.clone() });
+                    }
+                };
 
                 Ok(Arc::new(util::image::crop(&img, rx, ry, rw, rh)))
             }
@@ -306,37 +295,24 @@ impl TextureCache {
 
                 Some(SpriteRecipe::File(id)) => get(&id),
 
-                Some(SpriteRecipe::Region { base, x, y, width, height, div_x, div_y }) => get(&base)
-                    .and_then(|img| {
-                        let (rx, ry, rw, rh) = match util::image::region_rect(
-                            &img,
-                            &base,
-                            (x, y, width, height),
-                            div_x,
-                            div_y,
-                        ) {
-                            Ok(bounds) => bounds,
-                            Err(err) => {
-                                warning = Some((sprite.to_string(), err));
-                                return Err(TextureError::InvalidRegion {
-                                    sprite: sprite.clone(),
-                                    base: base.clone(),
-                                });
-                            }
-                        };
+                Some(SpriteRecipe::Region { base, x, y, width, height, div_x, div_y }) => get(&base).and_then(|img| {
+                    let (rx, ry, rw, rh) = match util::image::region_rect(&img, &base, (x, y, width, height), div_x, div_y) {
+                        Ok(bounds) => bounds,
+                        Err(err) => {
+                            warning = Some((sprite.to_string(), err));
+                            return Err(TextureError::InvalidRegion { sprite: sprite.clone(), base: base.clone() });
+                        }
+                    };
 
-                        Ok(Arc::new(util::image::crop(&img, rx, ry, rw, rh)))
-                    }),
+                    Ok(Arc::new(util::image::crop(&img, rx, ry, rw, rh)))
+                }),
 
                 Some(SpriteRecipe::Palettized { base, key, palette }) => {
                     let want = (key, palette.clone());
                     get(&base).and_then(|src| match mappings.get(&want) {
                         Some(Ok(m)) => Ok(Arc::new(m.remap(&src))),
                         Some(Err(MappingError::Size(e))) => {
-                            warning = Some((
-                                palette.to_string(),
-                                "Failed to create palette mapping".to_string(),
-                            ));
+                            warning = Some((palette.to_string(), "Failed to create palette mapping".to_string()));
                             Err(TextureError::Palette(sprite.clone(), e.clone()))
                         }
                         Some(Err(MappingError::Load(e))) => Err(e.clone()),
@@ -357,21 +333,12 @@ impl TextureCache {
             .clone()
     }
 
-    fn finish(
-        &self,
-        diag: &Diagnostics,
-        id: &ResourceId,
-        result: Loaded<Arc<RgbaImage>>,
-    ) -> Loaded<Arc<RgbaImage>> {
+    fn finish(&self, diag: &Diagnostics, id: &ResourceId, result: Loaded<Arc<RgbaImage>>) -> Loaded<Arc<RgbaImage>> {
         match result {
-            Err(TextureError::NotFound(ResourceId { namespace, path }))
-                if &namespace == "minecraft" && &path == "missingno" =>
-            {
+            Err(TextureError::NotFound(ResourceId { namespace, path })) if &namespace == "minecraft" && &path == "missingno" => {
                 Ok(missing_texture().clone())
             }
-            Err(err @ (TextureError::NotFound(_) | TextureError::InvalidRegion { .. }))
-                if self.substitute_missing =>
-            {
+            Err(err @ (TextureError::NotFound(_) | TextureError::InvalidRegion { .. })) if self.substitute_missing => {
                 diag.error(id, || format!("{err}. Substituting"));
                 Ok(missing_texture().clone())
             }
@@ -392,7 +359,7 @@ impl TextureCache {
         };
         cell.get_or_init(|| self.resolve(rm, id)).await.clone()
     }
-    
+
     pub async fn meta(&self, rm: &ResourceManager, id: &ResourceId) -> Arc<RawTextureMeta> {
         let index = self.index(rm).await;
         match index.recipe(id) {

@@ -34,8 +34,7 @@ impl Target {
 
     pub fn into_image(self) -> RgbaImage {
         // SAFETY: u32 is obviously aligned for u8
-        let bytes =
-            unsafe { std::slice::from_raw_parts(self.color.as_ptr().cast::<u8>(), self.color.len() * 4) };
+        let bytes = unsafe { std::slice::from_raw_parts(self.color.as_ptr().cast::<u8>(), self.color.len() * 4) };
         RgbaImage::from_raw(self.width, self.height, bytes.to_vec()).expect("buffer is width * height")
     }
 }
@@ -217,11 +216,7 @@ fn bbox(quad: &ScreenQuad, width: u32, height: u32) -> (i32, i32, i32, i32) {
     (min_x, min_y, max_x, max_y)
 }
 
-fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(
-    out: &mut Target,
-    shaded: &mut Vec<u32>,
-    quad: &ScreenQuad,
-) {
+fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad) {
     let tex = &*quad.sprite;
     let bounds @ (min_x, min_y, max_x, max_y) = bbox(quad, out.width, out.height);
     if min_x >= max_x || min_y >= max_y {
@@ -251,11 +246,7 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
 ) {
     fn window(start: f32, step: f32, n: i32) -> (i32, i32) {
         if step == 0.0 {
-            return if (0.0..=1.0).contains(&start) {
-                (0, n)
-            } else {
-                (0, 0)
-            };
+            return if (0.0..=1.0).contains(&start) { (0, n) } else { (0, 0) };
         }
         let (cross_lo, cross_hi) = (-start / step, (1.0 - start) / step);
         let (enter, exit) = if step > 0.0 {
@@ -350,9 +341,7 @@ fn draw(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad, depth: bool)
 }
 
 pub fn render(out: &mut Target, quads: &mut [ScreenQuad], depth: bool) {
-    let near = |quad: &ScreenQuad| {
-        quad.origin_depth + quad.depth_gradient[0].min(0.0) + quad.depth_gradient[1].min(0.0)
-    };
+    let near = |quad: &ScreenQuad| quad.origin_depth + quad.depth_gradient[0].min(0.0) + quad.depth_gradient[1].min(0.0);
     let far = |q: &ScreenQuad| q.origin_depth + q.depth_gradient[0].max(0.0) + q.depth_gradient[1].max(0.0);
     let rank = |q: &ScreenQuad| match q.pass {
         PassKind::Opaque => 0,

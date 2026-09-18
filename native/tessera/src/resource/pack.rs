@@ -46,10 +46,7 @@ pub enum ResourcePack {
         entries: FastHashMap<String, ZipEntry>,
     },
     /// On disk directory
-    Directory {
-        path: PathBuf,
-        index: FastHashSet<String>,
-    },
+    Directory { path: PathBuf, index: FastHashSet<String> },
     /// Pre-shipped resources
     Internal,
     /// Delegated to 3rd party fs impl
@@ -67,10 +64,7 @@ pub trait FileSystem: Send + Sync {
 }
 
 impl ResourcePack {
-    pub async fn new_zip<P: AsRef<Path>, R: Into<Option<String>>>(
-        path: P,
-        root: R,
-    ) -> Result<Self, PackCreationError> {
+    pub async fn new_zip<P: AsRef<Path>, R: Into<Option<String>>>(path: P, root: R) -> Result<Self, PackCreationError> {
         // to string and add trailing / if missing
         let root = root.into().map(|mut root| {
             if !root.ends_with('/') {
@@ -154,11 +148,7 @@ impl ResourcePack {
         }
     }
 
-    pub async fn list_prefix<'a>(
-        &'a self,
-        prefix: impl Into<Option<&str>>,
-        extension: &str,
-    ) -> Vec<Cow<'a, str>> {
+    pub async fn list_prefix<'a>(&'a self, prefix: impl Into<Option<&str>>, extension: &str) -> Vec<Cow<'a, str>> {
         let prefix = prefix.into().map(|p| p.trim_matches('/')).filter(|p| !p.is_empty());
         let ext = Some(extension.trim_start_matches('.')).filter(|e| !e.is_empty());
 
@@ -187,9 +177,8 @@ impl ResourcePack {
                 return true;
             };
             let file = rel.rsplit_once('/').map_or(rel, |(_, file)| file);
-            file.rsplit_once('.').is_some_and(|(file_name, extension)| {
-                !file_name.is_empty() && extension.eq_ignore_ascii_case(ext)
-            })
+            file.rsplit_once('.')
+                .is_some_and(|(file_name, extension)| !file_name.is_empty() && extension.eq_ignore_ascii_case(ext))
         };
 
         match self {
@@ -210,14 +199,12 @@ impl ResourcePack {
 
     pub async fn read_many(&self, paths: &[&str]) -> Vec<Option<Cow<'static, [u8]>>> {
         match self {
-            Self::Zip { archive, entries, .. } if util::is_multithreaded() => {
-                tokio::task::block_in_place(|| {
-                    paths
-                        .par_iter()
-                        .map(|p| entries.get(*p).and_then(|e| read_zip_entry(archive, e)).map(Cow::Owned))
-                        .collect()
-                })
-            }
+            Self::Zip { archive, entries, .. } if util::is_multithreaded() => tokio::task::block_in_place(|| {
+                paths
+                    .par_iter()
+                    .map(|p| entries.get(*p).and_then(|e| read_zip_entry(archive, e)).map(Cow::Owned))
+                    .collect()
+            }),
             Self::Zip { .. } | Self::Internal => {
                 let mut out = Vec::with_capacity(paths.len());
                 for path in paths {
@@ -275,11 +262,7 @@ fn walk_files(root: &Path) -> FastHashSet<String> {
     out.into_inner().unwrap_or_else(|e| e.into_inner()).into_iter().collect()
 }
 
-async fn read_dir_batched(
-    dir: &Path,
-    index: &FastHashSet<String>,
-    paths: &[&str],
-) -> Vec<Option<Cow<'static, [u8]>>> {
+async fn read_dir_batched(dir: &Path, index: &FastHashSet<String>, paths: &[&str]) -> Vec<Option<Cow<'static, [u8]>>> {
     const MAX_CHUNK_SIZE: usize = 8;
 
     if paths.is_empty() {

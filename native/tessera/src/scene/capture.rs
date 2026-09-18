@@ -1,13 +1,13 @@
+use super::quad;
+use super::quad::{Affine, ScreenQuad, Surface, edge_det, normal_matrix, to_screen};
+use super::rasterize::{AlphaCutout, PassKind, QuadKind};
+use super::shade::shade_for;
 use crate::capture::lookup::Capture;
 use crate::direction::{Direction, Quadrant};
 use crate::resource::ResourceId;
 use crate::resource::cache::Caches;
 use crate::resource::model::Transform;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
-use super::quad;
-use super::quad::{Affine, ScreenQuad, Surface, edge_det, normal_matrix, to_screen};
-use super::rasterize::{AlphaCutout, PassKind, QuadKind};
-use super::shade::shade_for;
 use std::str::FromStr;
 use std::sync::Arc;
 use tessera_capture_gen::model;
@@ -56,12 +56,7 @@ pub struct CapturedMaterial {
     shade: Option<Direction>,
 }
 
-pub async fn materials(
-    caches: &Caches,
-    capture: Capture<'_>,
-    tints: &[u32],
-    subject: &ResourceId,
-) -> Vec<CapturedMaterial> {
+pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], subject: &ResourceId) -> Vec<CapturedMaterial> {
     fn cutout(value: f32, subject: &ResourceId, caches: &Caches) -> AlphaCutout {
         if value == 0.1 {
             return AlphaCutout::Tenth;
@@ -72,11 +67,7 @@ pub async fn materials(
         caches
             .diagnostics()
             .warn(subject, || format!("Unknown alpha cutout {value}."));
-        if value < 0.3 {
-            AlphaCutout::Tenth
-        } else {
-            AlphaCutout::Half
-        }
+        if value < 0.3 { AlphaCutout::Tenth } else { AlphaCutout::Half }
     }
 
     let diag = caches.diagnostics();
@@ -91,18 +82,13 @@ pub async fn materials(
                 Ok(sprite) => sprite,
                 Err(err) => {
                     diag.error(subject, || {
-                        format!(
-                            "Failed to resolve sprite for captured texture {}: {err}",
-                            mat.texture
-                        )
+                        format!("Failed to resolve sprite for captured texture {}: {err}", mat.texture)
                     });
                     missing_sprite().clone()
                 }
             },
             Err(_) => {
-                diag.error(subject, || {
-                    format!("Capture texture {} has an invalid id", mat.texture)
-                });
+                diag.error(subject, || format!("Capture texture {} has an invalid id", mat.texture));
                 missing_sprite().clone()
             }
         };
@@ -133,7 +119,7 @@ pub async fn materials(
     out
 }
 
-pub fn project(
+pub(crate) fn project(
     cap: Capture<'_>,
     materials: &[CapturedMaterial],
     display: &Transform,
@@ -169,10 +155,8 @@ pub fn project(
     let size = size as f32;
     let gui = Affine::gui(display);
     let shade = |mat: &CapturedMaterial, normal: Vec3| {
-        mat.shade.map_or_else(
-            || shade_for(normal.normalized(), lights),
-            |dir| shades[dir as usize],
-        )
+        mat.shade
+            .map_or_else(|| shade_for(normal.normalized(), lights), |dir| shades[dir as usize])
     };
 
     let mut draws: Vec<&Draw> = cap.state.draws.iter().collect();
@@ -197,11 +181,7 @@ pub fn project(
                         projected += 1;
                         let corners: [[f32; 3]; 8] = std::array::from_fn(|i| {
                             let pick = |bit: usize, axis: usize| {
-                                if i & bit == 0 {
-                                    cube.from[axis]
-                                } else {
-                                    cube.to[axis]
-                                }
+                                if i & bit == 0 { cube.from[axis] } else { cube.to[axis] }
                             };
                             to_screen(world.apply(Vec3::new(pick(1, 0), pick(2, 1), pick(4, 2))), size)
                         });
@@ -236,11 +216,9 @@ pub fn project(
 
                     let front = -handedness * edge_det(&screen) > 0.0;
                     let (corners, uvs, kind) = match quad.kind {
-                        GenQuadKind::Parallelogram => (
-                            [screen[1], screen[0], screen[2]],
-                            [uv1, uv0, uv2],
-                            QuadKind::Parallelogram,
-                        ),
+                        GenQuadKind::Parallelogram => {
+                            ([screen[1], screen[0], screen[2]], [uv1, uv0, uv2], QuadKind::Parallelogram)
+                        }
                         GenQuadKind::Triangle => (screen, quad.uvs, QuadKind::Triangle),
                     };
                     let det = edge_det(&corners);

@@ -184,13 +184,7 @@ pub fn region_rect(
     let (rx, ry) = ((x * sx).floor(), (y * sy).floor());
     let (rw, rh) = ((w * sx).floor(), (h * sy).floor());
 
-    if !(rw >= 1.0
-        && rh >= 1.0
-        && rx >= 0.0
-        && ry >= 0.0
-        && rx + rw <= img.width() as f64
-        && ry + rh <= img.height() as f64)
-    {
+    if !(rw >= 1.0 && rh >= 1.0 && rx >= 0.0 && ry >= 0.0 && rx + rw <= img.width() as f64 && ry + rh <= img.height() as f64) {
         return Err(format!(
             "Unstitch region ({rx}, {ry}) {rw}x{rh} does not fit in the {}x{} source {base}",
             img.width(),

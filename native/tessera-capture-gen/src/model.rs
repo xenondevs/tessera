@@ -6,7 +6,7 @@ pub struct Block<'a> {
     pub path: &'a str,
     pub properties: &'a [&'a str],
     pub states: &'a [State<'a>],
-    pub materials: &'a [&'a Material<'a>]
+    pub materials: &'a [&'a Material<'a>],
 }
 
 #[derive(Debug)]
@@ -20,13 +20,13 @@ pub struct State<'a> {
 pub struct Draw<'a> {
     pub order: i32,
     pub pose: &'a Pose,
-    pub geometry: DrawGeometry<'a>
+    pub geometry: DrawGeometry<'a>,
 }
 
 #[derive(Debug)]
 pub enum DrawGeometry<'a> {
-    Model { material: u8, parts: &'a [Part<'a>]},
-    BlockModel { quads: &'a [Quad] }
+    Model { material: u8, parts: &'a [Part<'a>] },
+    BlockModel { quads: &'a [Quad] },
 }
 
 #[derive(Debug)]

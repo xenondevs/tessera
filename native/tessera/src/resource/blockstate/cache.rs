@@ -1,8 +1,5 @@
 use super::raw::{RawBlockState, RawVariants};
-use super::{
-    BlockStateError, BlockStateModel, ModelPart, ModelState, Pairs, PropertyRange, StateProperties,
-    WeightedModels,
-};
+use super::{BlockStateError, BlockStateModel, ModelPart, ModelState, Pairs, PropertyRange, StateProperties, WeightedModels};
 use crate::diagnostics::Diagnostics;
 use crate::resource::ResourceId;
 use crate::resource::model::cache::ModelCache;
@@ -24,13 +21,7 @@ impl BlockStateCache {
         Self { states: FastDashMap::default() }
     }
 
-    pub async fn prime(
-        &self,
-        rm: &ResourceManager,
-        models: &ModelCache,
-        ids: &[ResourceId],
-        diag: &Diagnostics,
-    ) {
+    pub async fn prime(&self, rm: &ResourceManager, models: &ModelCache, ids: &[ResourceId], diag: &Diagnostics) {
         let paths: Vec<String> = ids.iter().map(ResourceId::blockstate_path).collect();
         let bytes = rm.read_many(&paths).await;
         let parsed = rayon_batch(ids.iter().cloned().zip(bytes).collect(), |(id, bytes)| {
@@ -101,12 +92,7 @@ impl BlockStateCache {
         }
     }
 
-    fn build(
-        models: &ModelCache,
-        id: &ResourceId,
-        raw: RawBlockState,
-        diag: &Diagnostics,
-    ) -> Option<BlockStateModel> {
+    fn build(models: &ModelCache, id: &ResourceId, raw: RawBlockState, diag: &Diagnostics) -> Option<BlockStateModel> {
         if matches!(raw, RawBlockState { variants: Some(_), multipart: Some(_) }) {
             diag.warn(
                 id,

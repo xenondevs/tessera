@@ -15,8 +15,8 @@ use tessera_derive::mc_registry_enum;
 /// one on collision. `items` after `blocks` (i.e. `items` atlas having a higher prio) matches
 /// vanilla's `CombinedBlockItemMaterialBaker`.
 const KNOWN_ATLASES: [&str; 12] = [
-    "banner_patterns", "blocks", "celestials", "chests", "decorated_pot", "gui", "items", "map_decorations",
-    "paintings", "particles", "shield_patterns", "shulker_boxes",
+    "banner_patterns", "blocks", "celestials", "chests", "decorated_pot", "gui", "items", "map_decorations", "paintings",
+    "particles", "shield_patterns", "shulker_boxes",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -81,10 +81,7 @@ impl RawIdentifierPattern {
             },
         };
 
-        match (
-            compile_one(&self.namespace, "namespace"),
-            compile_one(&self.path, "path"),
-        ) {
+        match (compile_one(&self.namespace, "namespace"), compile_one(&self.path, "path")) {
             (Ok(namespace), Ok(path)) => IdentifierMatcher::Active { namespace, path },
             _ => IdentifierMatcher::Disabled,
         }
@@ -94,10 +91,7 @@ impl RawIdentifierPattern {
 /// A compiled [`RawIdentifierPattern`]. An absent pattern matches everything, so `None` is
 /// equivalent to `.*`. A disabled pattern matches nothing.
 pub enum IdentifierMatcher {
-    Active {
-        namespace: Option<Regex>,
-        path: Option<Regex>,
-    },
+    Active { namespace: Option<Regex>, path: Option<Regex> },
     Disabled,
 }
 
@@ -230,10 +224,7 @@ impl SpriteIndex {
             RawSpriteSource::PalettedPermutations { textures, palette_key, permutations, separator } => {
                 for base in textures {
                     for (name, palette) in permutations {
-                        let id = ResourceId::new(
-                            base.namespace.clone().into_owned(),
-                            format!("{}{separator}{name}", base.path),
-                        );
+                        let id = ResourceId::new(base.namespace.clone().into_owned(), format!("{}{separator}{name}", base.path));
                         sprites.insert(
                             id,
                             SpriteRecipe::Palettized {
