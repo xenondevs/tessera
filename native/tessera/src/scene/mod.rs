@@ -4,22 +4,25 @@ pub mod quad;
 pub mod shade;
 pub mod rasterize;
 pub mod blockstate;
+pub mod capture;
 
 use self::layered::Layer;
 use self::rasterize::Target;
+use crate::capture::lookup::{Capture, lookup};
 use crate::diagnostics::Diagnostics;
 use crate::direction::Quadrant;
 use crate::resource::ResourceId;
 use crate::resource::blockstate::{ModelPart, ModelState};
 use crate::resource::cache::Caches;
 use crate::resource::item::ItemModel;
-use crate::resource::model::{DisplayContext, Geometry, Model, Transform};
+use crate::resource::model::{DisplayContext, Geometry, GuiLight, Model, Transform};
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use crate::resource::tint::TintSource;
 use crate::util::FastHashMap;
 use image::RgbaImage;
 use std::str::FromStr;
 use std::sync::Arc;
+use tessera_capture_gen::model::RenderShape;
 use thiserror::Error;
 
 const FULL: ((f32, f32), (f32, f32)) = ((0.0, 0.0), (1.0, 1.0));
@@ -58,17 +61,25 @@ impl Renderer {
         props: &str,
         size: u32,
     ) -> Result<RgbaImage, RenderError> {
-        let state = self
-            .caches
-            .block_states
-            .get(id)
-            .ok_or_else(|| RenderError::NotPrimed(id.clone()))?;
         let query = blockstate::StateQuery::parse(props);
-        let parts: Vec<ModelPart> = blockstate::parts(&state, &query).into_iter().cloned().collect();
-        if parts.is_empty() {
-            return Err(RenderError::NoVariant(id.clone(), props.to_owned()));
-        }
-        self.geometry(&parts, Self::tints_for_block(id), size, id).await
+        let captured = lookup(id, &query, self.diagnostics());
+        let shape = captured.map_or(RenderShape::Model, |cap| cap.state.render_shape);
+
+        let parts: Vec<ModelPart> = if shape == RenderShape::Model {
+            let state = self
+                .caches
+                .block_states
+                .get(id)
+                .ok_or_else(|| RenderError::NotPrimed(id.clone()))?;
+            let parts: Vec<ModelPart> = blockstate::parts(&state, &query).into_iter().cloned().collect();
+            if parts.is_empty() {
+                return Err(RenderError::NoVariant(id.clone(), props.to_owned()));
+            }
+            parts
+        } else {
+            Vec::new()
+        };
+        self.geometry(&parts, captured, Self::tints_for_block(id), size, id).await
     }
 
     pub async fn render_item(&self, id: &ResourceId, size: u32) -> Result<RgbaImage, RenderError> {
@@ -102,7 +113,7 @@ impl Renderer {
             Geometry::Cuboid(_) => {
                 let part = ModelPart { model: model.clone(), state: ModelState::default() };
                 let resolved_tints = shade::tint_table(tints, &self.caches.color_maps.grass);
-                self.geometry(std::slice::from_ref(&part), &resolved_tints, size, subject)
+                self.geometry(std::slice::from_ref(&part), None, &resolved_tints, size, subject)
                     .await
             }
             Geometry::Empty => Err(RenderError::NoGeometry(subject.clone())),
@@ -152,6 +163,7 @@ impl Renderer {
     async fn geometry(
         &self,
         parts: &[ModelPart],
+        captured: Option<Capture<'static>>,
         tints: &[u32],
         size: u32,
         subject: &ResourceId,
@@ -160,25 +172,34 @@ impl Renderer {
         for part in parts {
             tables.push(self.sprites_for(&part.model, subject).await);
         }
-
-        let first = &parts[0].model;
-        let display = first.display[DisplayContext::Gui as usize].unwrap_or(Transform::BLOCK_GUI);
-        let shades = shade::shade_table(&display, first.gui_light);
+        let captured_materials = match captured {
+            Some(captured) => capture::materials(&self.caches, captured, tints, subject).await,
+            None => Vec::new(),
+        };
+        let (display, light) = parts.first().map_or((Transform::BLOCK_GUI, GuiLight::Side), |part| {
+            (part.model.display[DisplayContext::Gui as usize].unwrap_or(Transform::BLOCK_GUI), part.model.gui_light)
+        });
+        let shades = shade::shade_table(&display, light);
 
         let mut quads = Vec::new();
         let mut elements = 0;
         for (part, textures) in parts.iter().zip(&tables) {
             if let Geometry::Cuboid(list) = &part.model.geometry {
                 elements += list.len();
-                quad::project(list, textures, tints, &part.state, &display, size, &mut quads);
+                quad::project(
+                    list, textures, tints, &part.state, &display, &shades, size, &mut quads,
+                );
             }
+        }
+        if let Some(cap) = captured {
+            elements += capture::project(cap, &captured_materials, &display, shade::lights(light), &shades, size, &mut quads);
         }
         if quads.is_empty() {
             return Err(RenderError::NoGeometry(subject.clone()));
         }
         let depth = rasterize::needs_depth(parts.len(), elements, &quads);
         let mut target = Target::new(size, size, depth);
-        rasterize::render(&mut target, &mut quads, &shades, depth);
+        rasterize::render(&mut target, &mut quads, depth);
         Ok(target.into_image())
     }
 

@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:end_gateway",
+  "materials": [],
+  "states": {
+    "": {
+      "render_shape": "invisible",
+      "discarded": [
+        "custom_geometry"
+      ]
+    }
+  }
+}

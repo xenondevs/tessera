@@ -95,12 +95,16 @@ pub fn fixed_factors(shade: f32, tint: u32) -> [u32; 3] {
 }
 
 pub fn shade_table(display: &Transform, light: GuiLight) -> [f32; 6] {
-    let lights = match light {
-        GuiLight::Side => &ITEMS_3D,
-        GuiLight::Front => &ITEMS_FLAT,
-    };
+    let lights = lights(light);
     let mat = normal_matrix(display_linear(display));
     Direction::ALL.map(|dir| shade_for((mat * dir.unit()).normalized(), lights))
+}
+
+pub fn lights(light: GuiLight) -> &'static [Vec3; 2] {
+    match light {
+        GuiLight::Side => &ITEMS_3D,
+        GuiLight::Front => &ITEMS_FLAT,
+    }
 }
 
 pub fn tint_table(sources: &[TintSource], grass: &ColorMap) -> Vec<u32> {

@@ -39,7 +39,7 @@ impl ResourceId {
 
     pub fn from_path<P>(path: &P) -> Result<Self, InvalidResourceId>
     where
-        P: AsRef<str>,
+        P: AsRef<str> + ?Sized,
     {
         let raw = path.as_ref();
         let invalid = || InvalidResourceId { id: raw.to_string() };

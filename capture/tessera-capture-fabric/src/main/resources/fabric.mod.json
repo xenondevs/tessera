@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "tessera-capture",
+  "version": "${version}",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "xyz.xenondevs.tessera.capture.fabric.TesseraCaptureClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "*",
+    "fabric-language-kotlin": "*",
+    "fabric-command-api-v2": "*"
+  },
+  "mixins": [
+    "tessera-capture.mixins.json"
+  ],
+  "accessWidener": "tessera-capture.accesswidener"
+}

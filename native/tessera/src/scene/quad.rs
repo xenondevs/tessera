@@ -1,3 +1,4 @@
+use super::rasterize::{PassKind, QuadKind};
 use crate::direction::Direction;
 use crate::direction::Quadrant;
 use crate::resource::blockstate::ModelState;
@@ -10,7 +11,7 @@ use ultraviolet::{Mat3, Vec3};
 
 /// Corner index bits: bit-0 = x, bit-1 = y, bit-2 = z
 /// todo, change to Direction::ALL map once https://github.com/rust-lang/rust/issues/143874 is stable
-const FACE_CORNERS: [[usize; 4]; 6] = [
+pub(crate) const FACE_CORNERS: [[usize; 4]; 6] = [
     [3, 1, 0, 2], // north
     [7, 5, 1, 3], // east
     [6, 4, 5, 7], // south
@@ -22,7 +23,7 @@ const FACE_CORNERS: [[usize; 4]; 6] = [
 const SUBPIXEL: f32 = 256.0;
 
 #[derive(Clone, Debug)]
-pub struct ParaQuad {
+pub struct ScreenQuad {
     pub origin: [f32; 2],
     pub edges: [[f32; 2]; 2],
     pub inverse: [f32; 4],
@@ -33,7 +34,67 @@ pub struct ParaQuad {
     pub sprite: Arc<Sprite>,
     pub light_emission: u8,
     pub tint: u32,
-    pub shade: Direction,
+    pub shade: f32,
+    pub pass: PassKind,
+    pub kind: QuadKind,
+}
+
+pub(crate) struct Surface {
+    pub sprite: Arc<Sprite>,
+    pub light_emission: u8,
+    pub tint: u32,
+    pub shade: f32,
+    pub pass: PassKind,
+    pub kind: QuadKind,
+}
+
+impl ScreenQuad {
+    pub(crate) fn new(corners: [[f32; 3]; 3], det: f32, uvs: [[f32; 2]; 3], surface: Surface) -> Self {
+        let [origin, end_u, end_v] = corners;
+        let edge_u = [end_u[0] - origin[0], end_u[1] - origin[1]];
+        let edge_v = [end_v[0] - origin[0], end_v[1] - origin[1]];
+        let inv_det = 1.0 / det;
+        let [uv_origin, uv_u, uv_v] = uvs;
+        Self {
+            origin: [origin[0], origin[1]],
+            edges: [edge_u, edge_v],
+            inverse: [
+                edge_v[1] * inv_det,
+                -edge_v[0] * inv_det,
+                -edge_u[1] * inv_det,
+                edge_u[0] * inv_det,
+            ],
+            origin_depth: origin[2],
+            depth_gradient: [end_u[2] - origin[2], end_v[2] - origin[2]],
+            uv_origin,
+            uv_gradient: [
+                [uv_u[0] - uv_origin[0], uv_u[1] - uv_origin[1]],
+                [uv_v[0] - uv_origin[0], uv_v[1] - uv_origin[1]],
+            ],
+            sprite: surface.sprite,
+            light_emission: surface.light_emission,
+            tint: surface.tint,
+            shade: surface.shade,
+            pass: surface.pass,
+            kind: surface.kind,
+        }
+    }
+}
+
+#[inline(always)]
+pub(crate) fn edge_det(corners: &[[f32; 3]; 3]) -> f32 {
+    let [origin, end_u, end_v] = corners;
+    (end_u[0] - origin[0]) * (end_v[1] - origin[1]) - (end_u[1] - origin[1]) * (end_v[0] - origin[0])
+}
+
+#[inline(always)]
+pub(crate) fn to_screen(point: Vec3, size: f32) -> [f32; 3] {
+    let snap = |v: f32| (v * SUBPIXEL).round() / SUBPIXEL;
+    [
+        snap((0.5 + point.x) * size),
+        snap((0.5 - point.y) * size),
+        -point.z,
+    ]
 }
 
 pub struct Affine {
@@ -42,7 +103,7 @@ pub struct Affine {
 }
 
 impl Affine {
-    const fn identity() -> Self {
+    pub(crate) const fn identity() -> Self {
         Self {
             linear: Mat3::new(
                 Vec3::new(1.0, 0.0, 0.0),
@@ -57,15 +118,23 @@ impl Affine {
         self.linear * v + self.translation
     }
 
-    fn after(&self, rhs: &Affine) -> Affine {
+    pub(crate) fn after(&self, rhs: &Affine) -> Affine {
         Affine {
             linear: self.linear * rhs.linear,
             translation: self.linear * rhs.translation + self.translation,
         }
     }
 
-    fn about(lin_mat: Mat3, pivot: Vec3) -> Affine {
+    pub(crate) fn about(lin_mat: Mat3, pivot: Vec3) -> Affine {
         Affine { linear: lin_mat, translation: pivot - lin_mat * pivot }
+    }
+
+    pub(crate) fn gui(display: &Transform) -> Affine {
+        let lin_mat = display_linear(display);
+        Affine {
+            linear: lin_mat,
+            translation: display.translation - lin_mat * Vec3::broadcast(0.5),
+        }
     }
 }
 
@@ -191,20 +260,14 @@ pub fn project(
     tints: &[u32],
     state: &ModelState,
     display: &Transform,
+    shades: &[f32; 6],
     size: u32,
-    out: &mut Vec<ParaQuad>,
+    out: &mut Vec<ScreenQuad>,
 ) {
-
     let size = size as f32;
     let center = Vec3::broadcast(0.5);
     let state_mat = state_matrix(state);
-
-    let display_mat = display_linear(display);
-    let to_gui = Affine {
-        linear: display_mat,
-        translation: display.translation - display_mat * center,
-    };
-    let world = to_gui.after(&Affine::about(state_mat, center));
+    let world = Affine::gui(display).after(&Affine::about(state_mat, center));
 
     let locks: [Option<Mat3>; 6] = std::array::from_fn(|i| {
         state
@@ -226,13 +289,7 @@ pub fn project(
                 if i & 2 == 0 { el.from.y } else { el.to.y },
                 if i & 4 == 0 { el.from.z } else { el.to.z },
             );
-            let point = mat.apply(v);
-            let snap = |v: f32| (v * SUBPIXEL).round() / SUBPIXEL;
-            [
-                snap((0.5 + point.x) * size),
-                snap((0.5 - point.y) * size),
-                -point.z,
-            ]
+            to_screen(mat.apply(v), size)
         });
 
         let normal_mat = normal_matrix(state_mat * elem_aff.linear);
@@ -244,50 +301,37 @@ pub fn project(
 
             let shift = face.rotation as usize;
             let origin_slot = (4 - shift) % 4;
-            let corner_origin = corners[slots[origin_slot]]; // uv (0,0) after rotation
-            let corner_u = corners[slots[(origin_slot + 3) % 4]]; // uv (1,0)
-            let corner_v = corners[slots[(origin_slot + 1) % 4]]; // uv (0,1)
-
-            let edge_u = [corner_u[0] - corner_origin[0], corner_u[1] - corner_origin[1]];
-            let edge_v = [corner_v[0] - corner_origin[0], corner_v[1] - corner_origin[1]];
-            let det = edge_u[0] * edge_v[1] - edge_u[1] * edge_v[0];
-
+            let quad_corners = [
+                corners[slots[origin_slot]],           // uv (0,0) after rotation
+                corners[slots[(origin_slot + 3) % 4]], // uv (1,0)
+                corners[slots[(origin_slot + 1) % 4]], // uv (0,1)
+            ];
+            let det = edge_det(&quad_corners);
             if det <= 0.0 {
                 continue;
             }
 
-            let inv_det = 1.0 / det;
             let uv = uv_corners(face, locks[i]);
-            let (co, cu, cv) = (uv[0], uv[3], uv[1]);
-
             let shade = match el.shade_direction {
                 ShadeDirection::Override(dir) => dir,
                 ShadeDirection::Actual => {
                     closest_direction(normal_mat * facing.unit()).unwrap_or(Direction::Up)
                 }
             };
-
-            out.push(ParaQuad {
-                origin: [corner_origin[0], corner_origin[1]],
-                edges: [edge_u, edge_v],
-                inverse: [
-                    edge_v[1] * inv_det,
-                    -edge_v[0] * inv_det,
-                    -edge_u[1] * inv_det,
-                    edge_u[0] * inv_det,
-                ],
-                origin_depth: corner_origin[2],
-                depth_gradient: [corner_u[2] - corner_origin[2], corner_v[2] - corner_origin[2]],
-                uv_origin: co,
-                uv_gradient: [[cu[0] - co[0], cu[1] - co[1]], [cv[0] - co[0], cv[1] - co[1]]],
-                sprite: textures.get(&face.texture).unwrap_or(missing_sprite()).clone(),
+            let sprite = textures.get(&face.texture).unwrap_or(missing_sprite()).clone();
+            let surface = Surface {
+                pass: sprite.blend.into(),
+                sprite,
                 light_emission: el.light_emission,
                 tint: usize::try_from(face.tint_index)
                     .ok()
                     .and_then(|i| tints.get(i).copied())
                     .unwrap_or(u32::MAX),
-                shade,
-            });
+                shade: shades[shade as usize],
+                kind: QuadKind::Parallelogram,
+            };
+
+            out.push(ScreenQuad::new(quad_corners, det, [uv[0], uv[3], uv[1]], surface));
         }
     }
 }

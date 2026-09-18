@@ -1,0 +1,104 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:light",
+  "materials": [],
+  "states": {
+    "level=0,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=0,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=1,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=1,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=2,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=2,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=3,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=3,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=4,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=4,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=5,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=5,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=6,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=6,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=7,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=7,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=8,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=8,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=9,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=9,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=10,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=10,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=11,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=11,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=12,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=12,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=13,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=13,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=14,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=14,waterlogged=false": {
+      "render_shape": "invisible"
+    },
+    "level=15,waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "level=15,waterlogged=false": {
+      "render_shape": "invisible"
+    }
+  }
+}

@@ -3,6 +3,12 @@
 *.iws
 .idea/
 .gradle/
-/target/
-*/target/
-*/*/target/
+.kotlin/
+build/
+run/
+runs/
+target/
+minecraft-assets-*/
+*.zip
+.DS_Store
+Thumbs.db

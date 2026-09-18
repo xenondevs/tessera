@@ -1,0 +1,44 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:moving_piston",
+  "materials": [],
+  "states": {
+    "facing=north,type=normal": {
+      "render_shape": "invisible"
+    },
+    "facing=north,type=sticky": {
+      "render_shape": "invisible"
+    },
+    "facing=east,type=normal": {
+      "render_shape": "invisible"
+    },
+    "facing=east,type=sticky": {
+      "render_shape": "invisible"
+    },
+    "facing=south,type=normal": {
+      "render_shape": "invisible"
+    },
+    "facing=south,type=sticky": {
+      "render_shape": "invisible"
+    },
+    "facing=west,type=normal": {
+      "render_shape": "invisible"
+    },
+    "facing=west,type=sticky": {
+      "render_shape": "invisible"
+    },
+    "facing=up,type=normal": {
+      "render_shape": "invisible"
+    },
+    "facing=up,type=sticky": {
+      "render_shape": "invisible"
+    },
+    "facing=down,type=normal": {
+      "render_shape": "invisible"
+    },
+    "facing=down,type=sticky": {
+      "render_shape": "invisible"
+    }
+  }
+}

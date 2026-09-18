@@ -1,6 +1,6 @@
-use super::quad::ParaQuad;
+use super::quad::ScreenQuad;
 use super::shade::fixed_factors;
-use crate::resource::texture::sprite::{Blend, Sprite};
+use crate::resource::texture::sprite::Blend;
 use image::RgbaImage;
 
 /// One texel in fixed-point 32.32 format
@@ -40,6 +40,129 @@ impl Target {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PassKind {
+    Opaque,
+    Cutout(AlphaCutout),
+    Translucent,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AlphaCutout {
+    /// < 1 is invisible (255)
+    Visible,
+    /// < 0.5 is invisible (128)
+    Half,
+    /// < 0.1 is invisible (26)
+    Tenth,
+}
+
+impl From<Blend> for PassKind {
+    fn from(value: Blend) -> Self {
+        match value {
+            Blend::Opaque => Self::Opaque,
+            Blend::Cutout => Self::Cutout(AlphaCutout::Visible),
+            Blend::Translucent => Self::Translucent,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum QuadKind {
+    Parallelogram,
+    Triangle,
+}
+
+trait Pass {
+    const WRITES_DEPTH: bool;
+    fn depth_passes(depth: f32, stored: f32) -> bool;
+    fn keep(src: u32) -> bool;
+    fn compose(src: u32, dst: u32) -> u32;
+}
+
+struct Opaque;
+struct Cutout<const MIN: u32>;
+struct Translucent;
+
+impl Pass for Opaque {
+    const WRITES_DEPTH: bool = true;
+
+    #[inline(always)]
+    fn depth_passes(depth: f32, stored: f32) -> bool {
+        depth < stored
+    }
+
+    #[inline(always)]
+    fn keep(_: u32) -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn compose(src: u32, _: u32) -> u32 {
+        src
+    }
+}
+
+impl<const MIN: u32> Pass for Cutout<MIN> {
+    const WRITES_DEPTH: bool = true;
+
+    #[inline(always)]
+    fn depth_passes(depth: f32, stored: f32) -> bool {
+        depth < stored
+    }
+
+    #[inline(always)]
+    fn keep(src: u32) -> bool {
+        src >> 24 >= MIN
+    }
+
+    #[inline(always)]
+    fn compose(src: u32, _: u32) -> u32 {
+        src
+    }
+}
+
+impl Pass for Translucent {
+    const WRITES_DEPTH: bool = false;
+
+    // nearer-or-equal for stuff directly drawn on top of each other (e.g. a banner pattern)
+    #[inline(always)]
+    fn depth_passes(depth: f32, stored: f32) -> bool {
+        depth <= stored
+    }
+
+    #[inline(always)]
+    fn keep(src: u32) -> bool {
+        src & 0xFF000000 != 0
+    }
+
+    #[inline(always)]
+    fn compose(src: u32, dst: u32) -> u32 {
+        over(src, dst)
+    }
+}
+
+trait Coverage {
+    fn inside(s: f32, t: f32) -> bool;
+}
+
+struct Parallelogram;
+struct Triangle;
+
+impl Coverage for Parallelogram {
+    #[inline(always)]
+    fn inside(s: f32, t: f32) -> bool {
+        ((s - 0.5).abs() <= 0.5) & ((t - 0.5).abs() <= 0.5)
+    }
+}
+
+impl Coverage for Triangle {
+    #[inline(always)]
+    fn inside(s: f32, t: f32) -> bool {
+        (s >= 0.0) & (t >= 0.0) & (s + t <= 1.0)
+    }
+}
+
 #[inline(always)]
 fn modulate(texel: u32, k: [u32; 3]) -> u32 {
     let [r, g, b, a] = texel.to_le_bytes();
@@ -72,7 +195,7 @@ fn over(src: u32, dst: u32) -> u32 {
 }
 
 #[inline(always)]
-fn bbox(quad: &ParaQuad, width: u32, height: u32) -> (i32, i32, i32, i32) {
+fn bbox(quad: &ScreenQuad, width: u32, height: u32) -> (i32, i32, i32, i32) {
     let xs = [
         quad.origin[0],
         quad.origin[0] + quad.edges[0][0],
@@ -94,19 +217,17 @@ fn bbox(quad: &ParaQuad, width: u32, height: u32) -> (i32, i32, i32, i32) {
     (min_x, min_y, max_x, max_y)
 }
 
-pub fn rasterize<const TEST: bool, const BLEND: bool, const DEPTH: bool>(
+fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(
     out: &mut Target,
     shaded: &mut Vec<u32>,
-    tex: &Sprite,
-    quad: &ParaQuad,
-    shade: f32,
-    tint: u32,
+    quad: &ScreenQuad,
 ) {
+    let tex = &*quad.sprite;
     let bounds @ (min_x, min_y, max_x, max_y) = bbox(quad, out.width, out.height);
     if min_x >= max_x || min_y >= max_y {
         return;
     }
-    let color_factors = fixed_factors(shade, tint);
+    let color_factors = fixed_factors(quad.shade, quad.tint);
     let source = tex.image.as_chunks::<4>().0;
     if (max_x - min_x) * (max_y - min_y) >= source.len() as i32 {
         shaded.clear();
@@ -115,17 +236,16 @@ pub fn rasterize<const TEST: bool, const BLEND: bool, const DEPTH: bool>(
                 .iter()
                 .map(|texel| modulate(u32::from_le_bytes(*texel), color_factors)),
         );
-        fill::<TEST, BLEND, DEPTH, true>(out, shaded, tex, quad, color_factors, bounds);
+        fill::<P, C, DEPTH, true>(out, shaded, quad, color_factors, bounds);
     } else {
-        fill::<TEST, BLEND, DEPTH, false>(out, &[], tex, quad, color_factors, bounds);
+        fill::<P, C, DEPTH, false>(out, &[], quad, color_factors, bounds);
     }
 }
 
-fn fill<const TEST: bool, const BLEND: bool, const DEPTH: bool, const SHADED: bool>(
+fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
     out: &mut Target,
     shaded: &[u32],
-    tex: &Sprite,
-    quad: &ParaQuad,
+    quad: &ScreenQuad,
     color_factors: [u32; 3],
     (min_x, min_y, max_x, max_y): (i32, i32, i32, i32),
 ) {
@@ -146,6 +266,7 @@ fn fill<const TEST: bool, const BLEND: bool, const DEPTH: bool, const SHADED: bo
         ((enter as i32 - 1).max(0), (exit as i32 + 2).min(n))
     }
 
+    let tex = &*quad.sprite;
     let source = tex.image.as_chunks::<4>().0;
     let [ds_dx, ds_dy, dt_dx, dt_dy] = quad.inverse;
     let (tex_w, tex_h) = (tex.width as f32, tex.height as f32);
@@ -178,10 +299,10 @@ fn fill<const TEST: bool, const BLEND: bool, const DEPTH: bool, const SHADED: bo
         let row_offset = (y as u32 * out.width) as usize;
 
         for x in start..min_x + hi {
-            if ((s - 0.5).abs() <= 0.5) & ((t - 0.5).abs() <= 0.5) {
+            if C::inside(s, t) {
                 let depth = quad.origin_depth + s * quad.depth_gradient[0] + t * quad.depth_gradient[1];
                 let pixel = row_offset + x as usize;
-                if !DEPTH || depth < out.depth[pixel] {
+                if !DEPTH || P::depth_passes(depth, out.depth[pixel]) {
                     let texel_x = (tex_u >> 32).clamp(0, last_texel_x) as usize;
                     let texel_y = (tex_v >> 32).clamp(0, last_texel_y) as usize;
                     let texel = texel_y * stride + texel_x;
@@ -191,11 +312,11 @@ fn fill<const TEST: bool, const BLEND: bool, const DEPTH: bool, const SHADED: bo
                         let raw = *unsafe { source.get_unchecked(texel) };
                         modulate(u32::from_le_bytes(raw), color_factors)
                     };
-                    if !TEST || src & 0xFF000000 != 0 {
-                        if DEPTH && !BLEND {
+                    if P::keep(src) {
+                        if DEPTH && P::WRITES_DEPTH {
                             out.depth[pixel] = depth;
                         }
-                        out.color[pixel] = if BLEND { over(src, out.color[pixel]) } else { src }
+                        out.color[pixel] = P::compose(src, out.color[pixel])
                     }
                 }
             }
@@ -207,38 +328,50 @@ fn fill<const TEST: bool, const BLEND: bool, const DEPTH: bool, const SHADED: bo
     }
 }
 
-pub fn render(out: &mut Target, quads: &mut [ParaQuad], shades: &[f32; 6], depth: bool) {
-    let near = |quad: &ParaQuad| {
-        quad.origin_depth + quad.depth_gradient[0].min(0.0) + quad.depth_gradient[1].min(0.0)
-    };
-    quads.sort_by(|a, b| near(a).total_cmp(&near(b)));
-    let mut shaded = Vec::new();
-
-    macro_rules! pass {
-        ($class:expr, $test:literal, $blend:literal) => {
-            for q in quads.iter().filter(|q| q.sprite.blend == $class) {
-                let shade = shades[q.shade as usize];
-                if depth {
-                    rasterize::<$test, $blend, true>(out, &mut shaded, &q.sprite, q, shade, q.tint);
-                } else {
-                    rasterize::<$test, $blend, false>(out, &mut shaded, &q.sprite, q, shade, q.tint);
-                }
+fn draw(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad, depth: bool) {
+    macro_rules! with_pass {
+        ($pass:ty) => {
+            match (quad.kind, depth) {
+                (QuadKind::Parallelogram, true) => rasterize::<$pass, Parallelogram, true>(out, shaded, quad),
+                (QuadKind::Parallelogram, false) => rasterize::<$pass, Parallelogram, false>(out, shaded, quad),
+                (QuadKind::Triangle, true) => rasterize::<$pass, Triangle, true>(out, shaded, quad),
+                (QuadKind::Triangle, false) => rasterize::<$pass, Triangle, false>(out, shaded, quad),
             }
         };
     }
-    pass!(Blend::Opaque, false, false);
-    pass!(Blend::Cutout, true, false);
 
-    let far = |q: &ParaQuad| q.origin_depth + q.depth_gradient[0].max(0.0) + q.depth_gradient[1].max(0.0);
-    let mut translucent: Vec<&ParaQuad> =
-        quads.iter().filter(|q| q.sprite.blend == Blend::Translucent).collect();
-    translucent.sort_by(|a, b| far(b).total_cmp(&far(a)));
-    for q in translucent {
-        let shade = shades[q.shade as usize];
-        rasterize::<true, true, true>(out, &mut shaded, &q.sprite, q, shade, q.tint);
+    match quad.pass {
+        PassKind::Opaque => with_pass!(Opaque),
+        PassKind::Cutout(AlphaCutout::Visible) => with_pass!(Cutout<1>),
+        PassKind::Cutout(AlphaCutout::Tenth) => with_pass!(Cutout<26>),
+        PassKind::Cutout(AlphaCutout::Half) => with_pass!(Cutout<128>),
+        PassKind::Translucent => with_pass!(Translucent),
     }
 }
 
-pub fn needs_depth(part_count: usize, element_count: usize, quads: &[ParaQuad]) -> bool {
+pub fn render(out: &mut Target, quads: &mut [ScreenQuad], depth: bool) {
+    let near = |quad: &ScreenQuad| {
+        quad.origin_depth + quad.depth_gradient[0].min(0.0) + quad.depth_gradient[1].min(0.0)
+    };
+    let far = |q: &ScreenQuad| q.origin_depth + q.depth_gradient[0].max(0.0) + q.depth_gradient[1].max(0.0);
+    let rank = |q: &ScreenQuad| match q.pass {
+        PassKind::Opaque => 0,
+        PassKind::Cutout(_) => 1,
+        PassKind::Translucent => 2,
+    };
+    quads.sort_by(|a, b| {
+        rank(a).cmp(&rank(b)).then_with(|| match a.pass {
+            PassKind::Translucent => far(b).total_cmp(&far(a)).then_with(|| near(a).total_cmp(&near(b))),
+            _ => near(a).total_cmp(&near(b)),
+        })
+    });
+
+    let mut shaded = Vec::new();
+    for quad in quads.iter() {
+        draw(out, &mut shaded, quad, depth);
+    }
+}
+
+pub fn needs_depth(part_count: usize, element_count: usize, quads: &[ScreenQuad]) -> bool {
     part_count > 1 || element_count > 1 || quads.iter().any(|q| q.sprite.blend == Blend::Translucent)
 }

@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:bubble_column",
+  "materials": [],
+  "states": {
+    "drag=true": {
+      "render_shape": "invisible"
+    },
+    "drag=false": {
+      "render_shape": "invisible"
+    }
+  }
+}

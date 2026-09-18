@@ -129,14 +129,24 @@ pub struct SpriteIndex {
 
 impl SpriteIndex {
     pub async fn build(rm: &ResourceManager) -> Self {
-        let atlas_loads = stream::iter(KNOWN_ATLASES.iter().cloned())
-            .map(|atlas| async move {
-                let stack = rm.get_atlas_stack(atlas).await;
-                (atlas, stack)
-            })
-            .buffered(CONCURRENCY.min(KNOWN_ATLASES.len()));
+        let loads: Vec<_> = KNOWN_ATLASES.iter().map(|&atlas| Self::load_atlas(rm, atlas)).collect();
+        let mut atlas_loads = stream::iter(loads).buffered(CONCURRENCY.min(KNOWN_ATLASES.len()));
 
-        let (stacks, all_textures) = tokio::join!(atlas_loads.collect::<Vec<_>>(), rm.list(None, ".png"));
+        let mut stacks = Vec::with_capacity(KNOWN_ATLASES.len());
+        let all_textures = {
+            let list = rm.list(None, ".png");
+            tokio::pin!(list);
+            loop {
+                tokio::select! {
+                    Some(item) = atlas_loads.next() => stacks.push(item),
+                    result = &mut list => break result,
+                }
+            }
+        };
+
+        while let Some(item) = atlas_loads.next().await {
+            stacks.push(item);
+        }
 
         let parsed: Vec<(&str, &str)> = all_textures
             .iter()
@@ -148,8 +158,7 @@ impl SpriteIndex {
             let subject = format!("atlases/{atlas}.json");
 
             let mut sprites = FastHashMap::default();
-            for (layer, bytes) in stack.into_iter().enumerate() {
-                let mut bytes = bytes.into_owned();
+            for (layer, mut bytes) in stack.into_iter().enumerate() {
                 match simd_json::serde::from_slice::<RawAtlas>(&mut bytes) {
                     Ok(atlas) => {
                         for source in &atlas.sources {
@@ -165,6 +174,11 @@ impl SpriteIndex {
         }
 
         index
+    }
+
+    async fn load_atlas(rm: &ResourceManager, atlas: &'static str) -> (&'static str, Vec<Vec<u8>>) {
+        let stack = rm.get_atlas_stack(atlas).await;
+        (atlas, stack.into_iter().map(Cow::into_owned).collect())
     }
 
     pub fn recipe(&self, id: &ResourceId) -> Option<&SpriteRecipe> {

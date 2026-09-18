@@ -1,0 +1,56 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:lava",
+  "materials": [],
+  "states": {
+    "level=0": {
+      "render_shape": "invisible"
+    },
+    "level=1": {
+      "render_shape": "invisible"
+    },
+    "level=2": {
+      "render_shape": "invisible"
+    },
+    "level=3": {
+      "render_shape": "invisible"
+    },
+    "level=4": {
+      "render_shape": "invisible"
+    },
+    "level=5": {
+      "render_shape": "invisible"
+    },
+    "level=6": {
+      "render_shape": "invisible"
+    },
+    "level=7": {
+      "render_shape": "invisible"
+    },
+    "level=8": {
+      "render_shape": "invisible"
+    },
+    "level=9": {
+      "render_shape": "invisible"
+    },
+    "level=10": {
+      "render_shape": "invisible"
+    },
+    "level=11": {
+      "render_shape": "invisible"
+    },
+    "level=12": {
+      "render_shape": "invisible"
+    },
+    "level=13": {
+      "render_shape": "invisible"
+    },
+    "level=14": {
+      "render_shape": "invisible"
+    },
+    "level=15": {
+      "render_shape": "invisible"
+    }
+  }
+}

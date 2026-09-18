@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:structure_void",
+  "materials": [],
+  "states": {
+    "": {
+      "render_shape": "invisible"
+    }
+  }
+}

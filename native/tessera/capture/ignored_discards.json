@@ -1,0 +1,4 @@
+{
+  "minecraft:end_gateway": ["custom_geometry"],
+  "minecraft:end_portal": ["custom_geometry"]
+}

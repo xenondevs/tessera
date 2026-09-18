@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "block": "minecraft:barrier",
+  "materials": [],
+  "states": {
+    "waterlogged=true": {
+      "render_shape": "invisible"
+    },
+    "waterlogged=false": {
+      "render_shape": "invisible"
+    }
+  }
+}
