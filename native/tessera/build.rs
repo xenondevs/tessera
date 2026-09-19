@@ -10,13 +10,13 @@ fn main() {
         .unwrap();
 
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let input = manifest.join("capture");
 
     println!("cargo:rerun-if-changed={}", input.display());
     println!("cargo:rustc-env=TESSERA_CAPTURE_MINECRAFT={minecraft_version}");
 
-    match tessera_capture_gen::generate::generate(&input, minecraft_version, &out) {
+    #[cfg(feature = "embedded-assets")]
+    match tessera_capture_gen::generate::generate(&input, minecraft_version, &PathBuf::from(env::var_os("OUT_DIR").unwrap())) {
         Ok(stales) => {
             for stale in stales {
                 println!("cargo:warning=ignored discard matched nothing: {stale}");

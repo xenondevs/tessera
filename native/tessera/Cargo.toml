@@ -22,8 +22,12 @@ thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["fs", "macros", "rt-multi-thread", "sync"] }
 ultraviolet = "0.10"
 
+[features]
+default = ["embedded-assets"]
+embedded-assets = ["dep:tessera-capture-gen"]
+
 [build-dependencies]
-tessera-capture-gen = { path = "../tessera-capture-gen", features = ["generate"] }
+tessera-capture-gen = { path = "../tessera-capture-gen", features = ["generate"], optional = true }
 toml = "1"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]

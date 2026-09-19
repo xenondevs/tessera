@@ -6,7 +6,6 @@ use libdeflater::Decompressor;
 use rawzip::{CompressionMethod, ZipArchive, ZipArchiveEntryWayfinder, ZipSliceArchive};
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
-use rust_embed::RustEmbed;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::io;
@@ -15,10 +14,6 @@ use std::pin::Pin;
 use std::sync::Mutex;
 use tokio::fs::File;
 use tokio::task::JoinError;
-
-#[derive(RustEmbed)]
-#[folder = "$CARGO_MANIFEST_DIR/resources"]
-struct InternalResources;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PackCreationError {
@@ -47,8 +42,6 @@ pub enum ResourcePack {
     },
     /// On disk directory
     Directory { path: PathBuf, index: FastHashSet<String> },
-    /// Pre-shipped resources
-    Internal,
     /// Delegated to 3rd party fs impl
     Delegated(Box<dyn FileSystem>),
 }
@@ -119,18 +112,12 @@ impl ResourcePack {
         Ok(Self::Directory { path, index })
     }
 
-    pub fn new_internal() -> Self {
-        Self::Internal
-    }
-
     pub fn new_delegated(fs: Box<dyn FileSystem>) -> Self {
         Self::Delegated(fs)
     }
 
     pub async fn get_bytes(&self, path: &str) -> Option<Cow<'static, [u8]>> {
         match self {
-            Self::Internal => InternalResources::get(path).map(|f| f.data),
-
             Self::Delegated(fs) => fs.get_bytes(path).await,
 
             Self::Zip { archive, entries, .. } => {
@@ -187,7 +174,6 @@ impl ResourcePack {
                 .filter(|k| matches(k))
                 .map(|k| Cow::Borrowed(k.as_str()))
                 .collect(),
-            Self::Internal => InternalResources::iter().filter(|k| matches(k)).collect(),
             Self::Delegated(fs) => fs.list_prefix(prefix, extension).await,
             Self::Directory { index: entries, .. } => entries
                 .iter()
@@ -205,7 +191,7 @@ impl ResourcePack {
                     .map(|p| entries.get(*p).and_then(|e| read_zip_entry(archive, e)).map(Cow::Owned))
                     .collect()
             }),
-            Self::Zip { .. } | Self::Internal => {
+            Self::Zip { .. } => {
                 let mut out = Vec::with_capacity(paths.len());
                 for path in paths {
                     out.push(self.get_bytes(path).await);

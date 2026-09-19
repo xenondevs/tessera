@@ -1,4 +1,3 @@
-use super::tables::BLOCKS;
 use crate::diagnostics::Diagnostics;
 use crate::resource::ResourceId;
 use crate::scene::blockstate::StateQuery;
@@ -16,8 +15,12 @@ impl<'a> Capture<'a> {
     }
 }
 
+#[cfg_attr(not(feature = "embedded-assets"), allow(unused_variables))]
 pub fn lookup(block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<Capture<'static>> {
-    find(&BLOCKS, block, query, diag)
+    cfg_select! {
+        feature = "embedded-assets" => find(&super::tables::BLOCKS, block, query, diag),
+        _ => None,
+    }
 }
 
 pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<Capture<'a>> {
