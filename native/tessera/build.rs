@@ -10,7 +10,7 @@ fn main() {
         .unwrap();
 
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let input = manifest.join("capture");
+    let input = manifest.join("captures");
 
     println!("cargo:rerun-if-changed={}", input.display());
     println!("cargo:rustc-env=TESSERA_CAPTURE_MINECRAFT={minecraft_version}");
