@@ -23,7 +23,7 @@ use crate::util::FastHashMap;
 use image::RgbaImage;
 use std::str::FromStr;
 use std::sync::Arc;
-use tessera_capture_gen::model::RenderShape;
+use tessera_capture::model::RenderShape;
 use thiserror::Error;
 
 const FULL: ((f32, f32), (f32, f32)) = ((0.0, 0.0), (1.0, 1.0));

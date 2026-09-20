@@ -16,7 +16,7 @@ fn main() {
     println!("cargo:rustc-env=TESSERA_CAPTURE_MINECRAFT={minecraft_version}");
 
     #[cfg(feature = "embedded-assets")]
-    match tessera_capture_gen::generate::generate(&input, minecraft_version, &PathBuf::from(env::var_os("OUT_DIR").unwrap())) {
+    match tessera_capture::generate(&input, minecraft_version, &PathBuf::from(env::var_os("OUT_DIR").unwrap())) {
         Ok(stales) => {
             for stale in stales {
                 println!("cargo:warning=ignored discard matched nothing: {stale}");

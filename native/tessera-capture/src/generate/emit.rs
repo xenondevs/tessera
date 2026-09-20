@@ -176,7 +176,7 @@ pub(super) fn emit(pools: &Pools) -> String {
     let block_count = Literal::usize_unsuffixed(pools.blocks.len());
 
     let tokens = quote! {
-        use tessera_capture_gen::model::{
+        use tessera_capture::model::{
             Block, Cube, DepthBias, Direction, Draw, DrawGeometry, Face, Layering, Material, Part, Pose, Quad, QuadKind,
             RenderShape, State
         };

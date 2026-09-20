@@ -1,7 +1,7 @@
 use crate::diagnostics::Diagnostics;
 use crate::resource::ResourceId;
 use crate::scene::blockstate::StateQuery;
-use tessera_capture_gen::model::{Block, Material, State};
+use tessera_capture::model::{Block, Material, State};
 
 #[derive(Copy, Clone)]
 pub struct Capture<'a> {

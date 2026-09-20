@@ -10,8 +10,8 @@ use crate::resource::model::Transform;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use std::str::FromStr;
 use std::sync::Arc;
-use tessera_capture_gen::model;
-use tessera_capture_gen::model::{Draw, DrawGeometry, Pose, QuadKind as GenQuadKind};
+use tessera_capture::model;
+use tessera_capture::model::{Draw, DrawGeometry, Pose, QuadKind as CapQuadKind};
 use ultraviolet::{Mat3, Vec3};
 
 /// A face's corners c0 < c1 < c2 in ascending index order
@@ -216,10 +216,10 @@ pub(crate) fn project(
 
                     let front = -handedness * edge_det(&screen) > 0.0;
                     let (corners, uvs, kind) = match quad.kind {
-                        GenQuadKind::Parallelogram => {
+                        CapQuadKind::Parallelogram => {
                             ([screen[1], screen[0], screen[2]], [uv1, uv0, uv2], QuadKind::Parallelogram)
                         }
-                        GenQuadKind::Triangle => (screen, quad.uvs, QuadKind::Triangle),
+                        CapQuadKind::Triangle => (screen, quad.uvs, QuadKind::Triangle),
                     };
                     let det = edge_det(&corners);
                     if det == 0.0 || (!front && mat.cull) {

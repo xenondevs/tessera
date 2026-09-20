@@ -13,10 +13,9 @@ memmap2 = "0.9"
 rawzip = "0.5"
 rayon = "1"
 regex = "1"
-rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 serde = { version = "1", features = ["derive"] }
 simd-json = "0.18"
-tessera-capture-gen = { path = "../tessera-capture-gen" }
+tessera-capture = { path = "../tessera-capture" }
 tessera-derive = { path = "../tessera-derive" }
 thiserror = "2"
 tokio = { version = "1", default-features = false, features = ["fs", "macros", "rt-multi-thread", "sync"] }
@@ -24,10 +23,10 @@ ultraviolet = "0.10"
 
 [features]
 default = ["embedded-assets"]
-embedded-assets = ["dep:tessera-capture-gen"]
+embedded-assets = ["dep:tessera-capture"]
 
 [build-dependencies]
-tessera-capture-gen = { path = "../tessera-capture-gen", features = ["generate"], optional = true }
+tessera-capture = { path = "../tessera-capture", features = ["generate"], optional = true }
 toml = "1"
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
