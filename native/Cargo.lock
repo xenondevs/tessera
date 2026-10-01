@@ -1387,11 +1387,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "tessera-jni"
+name = "tessera-ffi"
 version = "0.1.0"
 dependencies = [
- "mimalloc",
+ "image",
+ "rayon",
  "tessera",
+ "tokio",
 ]
 
 [[package]]

@@ -3,9 +3,9 @@ resolver = "3"
 
 members = [
     "tessera",
-    "tessera-jni",
+    "tessera-ffi",
     "tessera-derive",
-    "tessera-capture-gen",
+    "tessera-capture",
 ]
 
 [profile.release]

@@ -8,11 +8,11 @@ use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Mutex;
-use tokio::fs::File;
 use tokio::task::JoinError;
 
 #[derive(Debug, thiserror::Error)]
@@ -48,16 +48,62 @@ pub enum ResourcePack {
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+#[derive(Copy, Clone)]
+pub struct PathFilter<'q> {
+    prefix: Option<&'q str>,
+    extension: Option<&'q str>,
+}
+
+impl<'q> PathFilter<'q> {
+    pub fn new(prefix: Option<&'q str>, ext: &'q str) -> Self {
+        Self {
+            prefix: prefix.map(|p| p.trim_matches('/')).filter(|p| !p.is_empty()),
+            extension: Some(ext.trim_start_matches('.')).filter(|e| !e.is_empty()),
+        }
+    }
+
+    /// Whether `path` is `assets/<namespace>/<prefix>/...[<.extension>]`
+    pub fn matches(&self, path: &str) -> bool {
+        let Some(rest) = path.strip_prefix("assets/") else {
+            return false;
+        };
+        let Some((namespace, rel)) = rest.split_once('/') else {
+            return false;
+        };
+        if namespace.is_empty() || rel.is_empty() {
+            return false;
+        }
+
+        if let Some(dir) = self.prefix {
+            let Some(tail) = rel.strip_prefix(dir).and_then(|tail| tail.strip_prefix('/')) else {
+                return false;
+            };
+
+            if tail.is_empty() {
+                return false;
+            }
+        }
+
+        let Some(ext) = self.extension else {
+            return true;
+        };
+        let file = rel.rsplit_once('/').map_or(rel, |(_, file)| file);
+        file.rsplit_once('.')
+            .is_some_and(|(file_name, extension)| !file_name.is_empty() && extension.eq_ignore_ascii_case(ext))
+    }
+}
+
 pub trait FileSystem: Send + Sync {
     fn get_bytes<'a>(&'a self, path: &str) -> BoxFuture<'a, Option<Cow<'static, [u8]>>>;
 
+    // TODO, PathFilter as arg
     fn list_prefix<'a>(&'a self, prefix: Option<&str>, ext: &str) -> BoxFuture<'a, Vec<Cow<'a, str>>>;
 
     fn read_many<'a>(&'a self, paths: &[&str]) -> BoxFuture<'a, Vec<Option<Cow<'static, [u8]>>>>;
 }
 
 impl ResourcePack {
-    pub async fn new_zip<P: AsRef<Path>, R: Into<Option<String>>>(path: P, root: R) -> Result<Self, PackCreationError> {
+    pub fn new_zip<P: AsRef<Path>, R: Into<Option<String>>>(path: P, root: R) -> Result<Self, PackCreationError> {
         // to string and add trailing / if missing
         let root = root.into().map(|mut root| {
             if !root.ends_with('/') {
@@ -65,7 +111,7 @@ impl ResourcePack {
             }
             root
         });
-        let file = File::open(path).await?;
+        let file = File::open(path)?;
         let map = unsafe { memmap2::Mmap::map(&file)? };
         let archive = ZipArchive::from_slice(map)?;
 
@@ -100,15 +146,12 @@ impl ResourcePack {
         Ok(ResourcePack::Zip { archive, entries })
     }
 
-    pub async fn new_dir<P: Into<PathBuf>>(dir: P) -> Result<Self, PackCreationError> {
+    pub fn new_dir<P: Into<PathBuf>>(dir: P) -> Result<Self, PackCreationError> {
         let path = dir.into();
         if !path.is_dir() {
             return Err(PackCreationError::NotADirectory);
         }
-        let index = {
-            let path = path.clone();
-            tokio::task::spawn_blocking(move || walk_files(&path)).await?
-        };
+        let index = walk_files(&path);
         Ok(Self::Directory { path, index })
     }
 
@@ -136,49 +179,20 @@ impl ResourcePack {
     }
 
     pub async fn list_prefix<'a>(&'a self, prefix: impl Into<Option<&str>>, extension: &str) -> Vec<Cow<'a, str>> {
-        let prefix = prefix.into().map(|p| p.trim_matches('/')).filter(|p| !p.is_empty());
-        let ext = Some(extension.trim_start_matches('.')).filter(|e| !e.is_empty());
-
-        let matches = |path: &str| -> bool {
-            let Some(rest) = path.strip_prefix("assets/") else {
-                return false;
-            };
-            let Some((namespace, rel)) = rest.split_once('/') else {
-                return false;
-            };
-            if namespace.is_empty() || rel.is_empty() {
-                return false;
-            }
-
-            if let Some(dir) = prefix {
-                let Some(tail) = rel.strip_prefix(dir).and_then(|tail| tail.strip_prefix('/')) else {
-                    return false;
-                };
-
-                if tail.is_empty() {
-                    return false;
-                }
-            }
-
-            let Some(ext) = ext else {
-                return true;
-            };
-            let file = rel.rsplit_once('/').map_or(rel, |(_, file)| file);
-            file.rsplit_once('.')
-                .is_some_and(|(file_name, extension)| !file_name.is_empty() && extension.eq_ignore_ascii_case(ext))
-        };
+        let prefix = prefix.into();
+        let filter = PathFilter::new(prefix, extension);
 
         match self {
             Self::Zip { entries, .. } => entries
                 .keys()
-                .filter(|k| matches(k))
+                .filter(|k| filter.matches(k))
                 .map(|k| Cow::Borrowed(k.as_str()))
                 .collect(),
             Self::Delegated(fs) => fs.list_prefix(prefix, extension).await,
-            Self::Directory { index: entries, .. } => entries
+            Self::Directory { index, .. } => index
                 .iter()
-                .filter(|p| matches(p))
-                .map(|k| Cow::Borrowed(k.as_str()))
+                .filter(|p| filter.matches(p))
+                .map(|p| Cow::Borrowed(p.as_str()))
                 .collect(),
         }
     }
