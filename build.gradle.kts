@@ -9,5 +9,5 @@ sourceSets {
 }
 
 dependencies {
-    compileOnly("org.jetbrains:annotations:26.1.0")
+    compileOnlyApi("org.jspecify:jspecify:1.0.0")
 }

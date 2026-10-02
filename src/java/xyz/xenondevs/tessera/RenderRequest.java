@@ -1,22 +1,21 @@
 package xyz.xenondevs.tessera;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 public sealed interface RenderRequest {
     
-    @NotNull String id();
+    String id();
     
     int size();
     
-    record Item(@NotNull String id, int size) implements RenderRequest {
+    record Item(String id, int size) implements RenderRequest {
     }
     
-    record Model(@NotNull String id, int size) implements RenderRequest {
+    record Model(String id, int size) implements RenderRequest {
     }
     
-    record BlockState(@NotNull String id, @Nullable String properties, int size,
-                      @NotNull Framing framing) implements RenderRequest {
+    record BlockState(String id, @Nullable String properties, int size,
+                      Framing framing) implements RenderRequest {
     }
     
     sealed interface Framing {

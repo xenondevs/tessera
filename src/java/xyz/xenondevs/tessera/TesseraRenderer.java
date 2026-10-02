@@ -1,6 +1,6 @@
 package xyz.xenondevs.tessera;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
@@ -65,7 +65,7 @@ public class TesseraRenderer implements AutoCloseable {
     private final List<ResourcePack> packs;
     private final MemorySegment handle;
     
-    public TesseraRenderer(@NotNull List<@NotNull ResourcePack> packs) throws Throwable {
+    public TesseraRenderer(List<ResourcePack> packs) throws Throwable {
         if (packs.isEmpty())
             throw new IllegalArgumentException("At least one resource pack is required");
         
@@ -99,7 +99,7 @@ public class TesseraRenderer implements AutoCloseable {
         rethrowPackErrors(true);
     }
     
-    public @NotNull List<@NotNull RenderResult> render(@NotNull List<? extends @NotNull RenderRequest> requests) throws Throwable {
+    public List<RenderResult> render(List<? extends RenderRequest> requests) throws Throwable {
         if (closed.get())
             throw new IllegalStateException("Renderer is closed");
         if (requests.isEmpty())
@@ -118,8 +118,13 @@ public class TesseraRenderer implements AutoCloseable {
         
         rethrowPackErrors(false);
         switch (status) {
-            case 0 -> { }
-            case 1 -> throw batch.failure;
+            case 0 -> {
+            }
+            case 1 -> {
+                throw batch.failure != null
+                    ? batch.failure
+                    : new IllegalStateException("An unknown error occurred during rendering");
+            }
             default -> throw new IllegalArgumentException(TesseraNative.lastError());
         }
         return List.of(batch.results);
@@ -190,7 +195,7 @@ public class TesseraRenderer implements AutoCloseable {
     private static final class Batch {
         
         final RenderResult[] results;
-        Throwable failure;
+        @Nullable Throwable failure;
         
         Batch(int count) {
             results = new RenderResult[count];

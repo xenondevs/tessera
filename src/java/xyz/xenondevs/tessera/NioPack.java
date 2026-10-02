@@ -1,7 +1,6 @@
 package xyz.xenondevs.tessera;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
@@ -41,10 +40,10 @@ public final class NioPack extends ResourcePack {
     
     private final Path root;
     private final Arena arena = Arena.ofShared();
-    private final AtomicReference<Throwable> lastError = new AtomicReference<>();
+    private final AtomicReference<@Nullable Throwable> lastError = new AtomicReference<>();
     final MemorySegment handle;
     
-    public NioPack(@NotNull Path root) throws Throwable {
+    public NioPack(Path root) throws Throwable {
         if (root.getFileSystem().provider().getScheme().equals("jar")) {
             var ssp = root.toUri().getRawSchemeSpecificPart();
             if (URI.create(ssp.substring(0, ssp.indexOf("!/"))).getScheme().equals("file"))

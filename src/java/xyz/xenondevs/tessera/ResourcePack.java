@@ -1,6 +1,6 @@
 package xyz.xenondevs.tessera;
 
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.atomic.AtomicInteger;
