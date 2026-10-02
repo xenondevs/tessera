@@ -134,9 +134,11 @@ public class TesseraRenderer implements AutoCloseable {
             case RenderRequest.Item _ -> el.set(JAVA_BYTE, KIND, KIND_ITEM);
             case RenderRequest.Model _ -> el.set(JAVA_BYTE, KIND, KIND_MODEL);
             case RenderRequest.BlockState(var _, var properties, var _, var framing) -> {
-                var props = arena.allocateFrom(properties);
-                el.set(ADDRESS, PROPS, props);
-                el.set(JAVA_LONG, PROPS_LEN, props.byteSize() - 1);
+                if (properties != null) {
+                    var props = arena.allocateFrom(properties);
+                    el.set(ADDRESS, PROPS, props);
+                    el.set(JAVA_LONG, PROPS_LEN, props.byteSize() - 1);
+                }
                 el.set(JAVA_BYTE, KIND, KIND_BLOCK_STATE);
                 switch (framing) {
                     case RenderRequest.Framing.Gui() -> el.set(JAVA_BYTE, FRAMING, FRAMING_GUI);
