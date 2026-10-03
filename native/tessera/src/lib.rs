@@ -6,6 +6,3 @@ pub mod util;
 pub mod capture;
 
 pub const MINECRAFT_VERSION: &str = env!("TESSERA_CAPTURE_MINECRAFT");
-
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

@@ -11,3 +11,6 @@ members = [
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+[patch.crates-io]
+libmimalloc-sys = { git = "https://github.com/xenondevs/mimalloc_rust", rev = "544382512afc0f8837b40910cfed0db8ff46eea2" }

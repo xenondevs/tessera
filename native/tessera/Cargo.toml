@@ -28,8 +28,3 @@ embedded-assets = ["dep:tessera-capture"]
 [build-dependencies]
 tessera-capture = { path = "../tessera-capture", features = ["generate"], optional = true }
 toml = "1"
-
-[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-mimalloc = { version = "0.1", features = ["local_dynamic_tls"] }
-[target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
-mimalloc = "0.1"
