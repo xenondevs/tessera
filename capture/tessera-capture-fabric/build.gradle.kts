@@ -1,23 +1,8 @@
 plugins {
     id("tessera.kotlin-conventions")
+    id("tessera.bundle-conventions")
     alias(libs.plugins.loom)
 }
-
-
-val bundle = configurations.dependencyScope("bundle")
-
-val bundleClasspath = configurations.resolvable("bundleClasspath") {
-    extendsFrom(bundle.get())
-    isTransitive = false
-}
-
-val shade = configurations.dependencyScope("shade")
-
-val shadeClasspath = configurations.resolvable("shadeClasspath") {
-    extendsFrom(shade.get())
-}
-
-configurations.named("implementation") { extendsFrom(bundle.get()) }
 
 dependencies {
     minecraft(libs.minecraft)
@@ -28,12 +13,6 @@ dependencies {
     
     bundle(project(":capture:tessera-capture-common"))
     shade(libs.adventure.api)
-}
-
-tasks.jar {
-    dependsOn(bundleClasspath)
-    from(bundleClasspath.map { it.map(::zipTree) })
-    from(shadeClasspath.map { it.map(::zipTree) })
 }
 
 tasks.processResources {
