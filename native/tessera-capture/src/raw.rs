@@ -13,6 +13,22 @@ pub struct RawBlockFile {
 }
 
 #[derive(Deserialize)]
+pub struct RawItemFile {
+    pub format: u32,
+    #[serde(rename = "minecraft")]
+    pub minecraft_version: String,
+    pub item: String,
+    pub materials: Vec<RawMaterial>,
+    pub default_leaf: RawLeaf
+}
+
+#[derive(Deserialize)]
+pub struct RawLeaf {
+    pub capture: Option<Vec<RawSubmission>>,
+    pub discarded: Option<Vec<String>>
+}
+
+#[derive(Deserialize)]
 pub struct RawMaterial {
     pub texture: RawTexture,
     pub pipeline: String,

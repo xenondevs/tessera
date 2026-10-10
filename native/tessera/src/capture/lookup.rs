@@ -1,29 +1,31 @@
 use crate::diagnostics::Diagnostics;
 use crate::resource::ResourceId;
 use crate::scene::blockstate::StateQuery;
-use tessera_capture::model::{Block, Material, State};
+use tessera_capture::model::{Block, Draw, Item, Material, RenderShape};
 
 #[derive(Copy, Clone)]
 pub struct Capture<'a> {
-    pub block: &'a Block<'a>,
-    pub state: &'a State<'a>,
-}
-
-impl<'a> Capture<'a> {
-    pub fn material(self, local: u8) -> &'a Material<'a> {
-        self.block.materials[usize::from(local)]
-    }
+    pub materials: &'a [&'a Material<'a>],
+    pub draws: &'a [Draw<'a>],
 }
 
 #[cfg_attr(not(feature = "embedded-assets"), allow(unused_variables))]
-pub fn lookup(block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<Capture<'static>> {
+pub fn lookup_block(block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<(RenderShape, Capture<'static>)> {
     cfg_select! {
         feature = "embedded-assets" => find(&super::tables::BLOCKS, block, query, diag),
         _ => None,
     }
 }
 
-pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<Capture<'a>> {
+#[cfg_attr(not(feature = "embedded-assets"), allow(unused_variables))]
+pub fn lookup_item(item: &ResourceId) -> Option<Capture<'static>> {
+    cfg_select! {
+        feature = "embedded-assets" => find_item(&super::tables::ITEMS, item),
+        _ => None,
+    }
+}
+
+pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<(RenderShape, Capture<'a>)> {
     let wanted = (block.namespace.as_ref(), block.path.as_ref());
     let entry = blocks[blocks
         .binary_search_by(|entry| (entry.namespace, entry.path).cmp(&wanted))
@@ -47,5 +49,16 @@ pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery
         .states
         .binary_search_by(|state| (*state.key).cmp(key.as_str()))
         .ok()?;
-    Some(Capture { block: entry, state: &entry.states[idx] })
+    let state = &entry.states[idx];
+
+    Some((state.render_shape, Capture { materials: entry.materials, draws: state.draws }))
+}
+
+pub fn find_item<'a>(items: &[&'a Item<'a>], item: &ResourceId) -> Option<Capture<'a>> {
+    let wanted = (item.namespace.as_ref(), item.path.as_ref());
+    let entry = items[items
+        .binary_search_by(|entry| (entry.namespace, entry.path).cmp(&wanted))
+        .ok()?];
+
+    Some(Capture { materials: entry.materials, draws: entry.draws })
 }

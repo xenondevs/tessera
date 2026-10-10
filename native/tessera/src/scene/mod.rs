@@ -9,22 +9,25 @@ pub mod capture;
 use self::layered::Layer;
 use self::quad::Rescale;
 use self::rasterize::Target;
-use crate::capture::lookup::{Capture, lookup};
+use crate::capture::lookup::{Capture, lookup_block};
 use crate::diagnostics::Diagnostics;
 use crate::direction::Quadrant;
 use crate::resource::ResourceId;
 use crate::resource::blockstate::{ModelPart, ModelState};
 use crate::resource::cache::Caches;
-use crate::resource::item::ItemModel;
+use crate::resource::item::{ItemModel, Leaf, StaticContext};
 use crate::resource::model::{DisplayContext, Geometry, GuiLight, Model, Transform};
+use crate::resource::texture::TextureSlot;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use crate::resource::tint::TintSource;
+use crate::scene::quad::{Affine, display_linear};
 use crate::util::FastHashMap;
 use image::RgbaImage;
 use std::str::FromStr;
 use std::sync::Arc;
 use tessera_capture::model::RenderShape;
 use thiserror::Error;
+use crate::resource::model::cache::missing_resolved;
 
 const FULL: ((f32, f32), (f32, f32)) = ((0.0, 0.0), (1.0, 1.0));
 
@@ -69,8 +72,10 @@ impl Renderer {
         framing: Framing,
     ) -> Result<RgbaImage, RenderError> {
         let query = blockstate::StateQuery::parse(props);
-        let captured = lookup(id, &query, self.diagnostics());
-        let shape = captured.map_or(RenderShape::Model, |cap| cap.state.render_shape);
+        let (shape, captured) = match lookup_block(id, &query, self.diagnostics()) {
+            Some((shape, capture)) => (shape, Some(capture)),
+            None => (RenderShape::Model, None),
+        };
 
         let parts: Vec<ModelPart> = if shape == RenderShape::Model {
             let state = self
@@ -96,7 +101,127 @@ impl Renderer {
             .items
             .get(id)
             .ok_or_else(|| RenderError::NotPrimed(id.clone()))?;
-        self.item_model(item.model.gui(), size, id).await
+        let mut leaves = Vec::new();
+        item.model.leaves(&StaticContext, &mut leaves);
+        if leaves.is_empty() {
+            return Err(RenderError::NoGeometry(id.clone()));
+        }
+
+        if let Some(flat) = Self::flat_layers(&leaves) {
+            let mut layers = Vec::new();
+            for (slots, tints) in flat {
+                let (resources, textures, grass) = (&self.caches.resources, &self.caches.textures, &self.caches.color_maps.grass);
+                layers.extend(layered::layers(resources, textures, slots, tints, grass, &self.diagnostics()).await);
+            }
+            return layered::composite(&layers, size).ok_or_else(|| RenderError::NoGeometry(id.clone()));
+        }
+
+        self.item_scene(&leaves, size, id).await
+    }
+
+    fn flat_layers<'a>(leaves: &[Leaf<'a>]) -> Option<Vec<(&'a [TextureSlot], &'a [TintSource])>> {
+        leaves
+            .iter()
+            .map(|leaf| match leaf {
+                Leaf::Model { model, tints, .. } => {
+                    // TODO transform on generated models (amethyst buds)
+                    match &model.geometry {
+                        Geometry::GeneratedItem(slots) => Some((&slots[..], *tints)),
+                        _ => None,
+                    }
+                }
+                _ => None, //TODO
+            })
+            .collect()
+    }
+
+    async fn item_scene(&self, leaves: &[Leaf<'_>], size: u32, subject: &ResourceId) -> Result<RgbaImage, RenderError> {
+        let view =
+            |display: &Option<Transform>, local: &Affine| Affine::gui(&display.unwrap_or(Transform::IDENTITY)).after(local);
+
+        let mut quads = Vec::new();
+        let mut elements = 0;
+        for leaf in leaves {
+            match leaf {
+                Leaf::Model { model, tints, local } => {
+                    let list = match &model.geometry {
+                        Geometry::Cuboid(list) => list,
+                        Geometry::Empty => continue,
+                        Geometry::GeneratedItem(_) => {
+                            // TODO
+                            self.diagnostics()
+                                .warn_keyed(subject, "mixed-composite", || "generated layer in a 3d model skipped");
+                            continue;
+                        }
+                    };
+                    let view = view(&model.display[DisplayContext::Gui as usize], local);
+                    let shades = shade::shade_table(view.linear, model.gui_light);
+                    let textures = self.sprites_for(model, subject).await;
+                    let tints = shade::tint_table(tints, &self.caches.color_maps.grass);
+                    elements += list.len();
+                    quad::project(
+                        list,
+                        &textures,
+                        &tints,
+                        &ModelState::default(),
+                        &view,
+                        &shades,
+                        size,
+                        &mut quads,
+                    );
+                }
+                Leaf::Special { base, local, capture: Some(capture) } => {
+                    let view = view(&base.display[DisplayContext::Gui as usize], local);
+                    let shades = shade::shade_table(view.linear, base.gui_light);
+                    let mats = capture::materials(&self.caches, *capture, &[], subject).await;
+                    elements += capture::project(
+                        *capture,
+                        &mats,
+                        &view,
+                        shade::lights(base.gui_light),
+                        &shades,
+                        size,
+                        &mut quads,
+                    );
+                }
+                Leaf::Special { base, local, .. } => {
+                    let list = match &base.geometry {
+                        Geometry::Cuboid(list) => list,
+                        Geometry::Empty => continue,
+                        Geometry::GeneratedItem(_) => {
+                            // TODO
+                            self.diagnostics()
+                                .warn_keyed(subject, "mixed-composite", || "generated layer in a 3d model skipped");
+                            continue;
+                        }
+                    };
+                    let view = view(&base.display[DisplayContext::Gui as usize], local);
+                    let shades = shade::shade_table(view.linear, base.gui_light);
+                    let textures = self.sprites_for(base, subject).await;
+                    elements += list.len();
+                    quad::project(list, &textures, &[], &ModelState::default(), &view, &shades, size, &mut quads);
+                }
+                Leaf::Missing => {
+                    let model = missing_resolved();
+                    let Geometry::Cuboid(list) = &model.geometry else {
+                        unreachable!()
+                    };
+                    let view = view(&model.display[DisplayContext::Gui as usize], &Affine::identity());
+                    let shades = shade::shade_table(view.linear, model.gui_light);
+                    let textures = self.sprites_for(model, subject).await;
+                    elements += list.len();
+                    quad::project(list, &textures, &[], &ModelState::default(), &view, &shades, size, &mut quads);
+                }
+            }
+        }
+
+        if quads.is_empty() {
+            return Err(RenderError::NoGeometry(subject.clone()));
+        }
+        let depth = rasterize::needs_depth(leaves.len(), elements, &quads);
+        let mut target = Target::new(size, size, depth);
+        rasterize::render(&mut target, &mut quads, depth);
+        Ok(target.into_image())
     }
 
     async fn model(
@@ -135,36 +260,6 @@ impl Renderer {
         }
     }
 
-    async fn item_model(&self, node: &ItemModel, size: u32, subject: &ResourceId) -> Result<RgbaImage, RenderError> {
-        let mut nodes = Vec::new();
-        draw_order(node, &mut nodes);
-        let Some((first, rest)) = nodes.split_first() else {
-            return Err(RenderError::NoGeometry(subject.clone()));
-        };
-
-        let base = self.leaf(first, size, subject).await?;
-        if rest.is_empty() {
-            return Ok(base);
-        }
-
-        let mut layers = vec![Layer { sprite: Arc::new(base), tint: u32::MAX }];
-        for node in rest {
-            if let Ok(image) = self.leaf(node, size, subject).await {
-                layers.push(Layer { sprite: Arc::new(image), tint: u32::MAX });
-            }
-        }
-        layered::composite(&layers, size).ok_or_else(|| RenderError::NoGeometry(subject.clone()))
-    }
-
-    async fn leaf(&self, node: &ItemModel, size: u32, subject: &ResourceId) -> Result<RgbaImage, RenderError> {
-        match node {
-            ItemModel::Model { model, tints } => self.model(model, tints, size, subject).await,
-            // TODO: dump special models from mc
-            ItemModel::Special { base } => self.model(base, &[], size, subject).await,
-            _ => Err(RenderError::NoGeometry(subject.clone())),
-        }
-    }
-
     async fn geometry(
         &self,
         parts: &[ModelPart],
@@ -188,21 +283,22 @@ impl Renderer {
                 part.model.gui_light,
             )
         });
-        let shades = shade::shade_table(&display, light);
+        let view = Affine::gui(&display);
+        let shades = shade::shade_table(view.linear, light);
 
         let mut quads = Vec::new();
         let mut elements = 0;
         for (part, textures) in parts.iter().zip(&tables) {
             if let Geometry::Cuboid(list) = &part.model.geometry {
                 elements += list.len();
-                quad::project(list, textures, tints, &part.state, &display, &shades, size, &mut quads);
+                quad::project(list, textures, tints, &part.state, &view, &shades, size, &mut quads);
             }
         }
         if let Some(cap) = captured {
             elements += capture::project(
                 cap,
                 &captured_materials,
-                &display,
+                &view,
                 shade::lights(light),
                 &shades,
                 size,
@@ -282,13 +378,5 @@ impl Renderer {
 
     pub fn diagnostics(&self) -> &Diagnostics {
         &self.caches.diagnostics()
-    }
-}
-
-fn draw_order<'a>(node: &'a ItemModel, out: &mut Vec<&'a ItemModel>) {
-    match node {
-        ItemModel::Composite(layers) => layers.iter().for_each(|l| draw_order(l, out)),
-        ItemModel::Model { .. } | ItemModel::Special { .. } => out.push(node),
-        _ => {}
     }
 }

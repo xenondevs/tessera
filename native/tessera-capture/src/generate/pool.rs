@@ -1,7 +1,7 @@
 use super::GenerateError;
 use super::states::StateGrid;
 use crate::model::{Direction, Layering, QuadKind, RenderShape};
-use crate::raw::{RawBlockFile, RawMaterial, RawPart, RawQuad, RawSubmission};
+use crate::raw::{RawBlockFile, RawItemFile, RawMaterial, RawPart, RawQuad, RawSubmission};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
 use std::path::Path;
@@ -132,6 +132,15 @@ pub struct Block {
     pub materials: usize,
 }
 
+pub struct Item {
+    pub namespace: String,
+    pub path: String,
+    /// into `material_lists`
+    pub materials: usize,
+    /// into `draws`
+    pub draws: usize,
+}
+
 #[derive(Default)]
 pub struct Pools {
     pub(super) poses: Pool<[FloatingBits; 12]>,
@@ -146,6 +155,7 @@ pub struct Pools {
     pub(super) states: Pool<Vec<State>>,
     pub(super) property_lists: Pool<Vec<String>>,
     pub(super) blocks: Vec<Block>,
+    pub(super) items: Vec<Item>,
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -224,16 +234,46 @@ impl Pools {
         Ok(())
     }
 
+    pub(super) fn item(&mut self, file: &RawItemFile, path: &Path) -> Result<(), GenerateError> {
+        let Some(capture) = file.default_leaf.capture.as_deref().filter(|cap| !cap.is_empty()) else {
+            return Ok(());
+        };
+        let (namespace, item_path) = file.item.split_once(':').unwrap_or_else(|| ("minecraft", &file.item));
+
+        let materials = file
+            .materials
+            .iter()
+            .map(|mat| self.material(mat, path))
+            .collect::<Result<Vec<_>, _>>()?;
+        let draws = capture
+            .iter()
+            .map(|submission| self.draw(submission, materials.len(), path))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let item = Item {
+            namespace: namespace.to_string(),
+            path: item_path.to_string(),
+            materials: self.material_lists.pool(materials),
+            draws: self.draws.pool(draws),
+        };
+        self.items.push(item);
+        Ok(())
+    }
+
     pub(super) fn finish(&mut self) -> Result<(), GenerateError> {
-        self.blocks
-            .sort_by(|a, b| (&a.namespace, &a.path).cmp(&(&b.namespace, &b.path)));
-        let dupe = self
-            .blocks
-            .windows(2)
-            .find(|pair| (&pair[0].namespace, &pair[0].path) == (&pair[1].namespace, &pair[1].path));
-        if let Some(dupe) = dupe {
-            return Err(GenerateError::DuplicateBlock { id: format!("{}:{}", dupe[0].namespace, dupe[0].path) });
+        fn sort<T>(entries: &mut [T], kind: &'static str, id: impl Fn(&T) -> (&str, &str)) -> Result<(), GenerateError> {
+            entries.sort_by(|a, b| id(a).cmp(&id(b)));
+            match entries.windows(2).find(|pair| id(&pair[0]) == id(&pair[1])) {
+                Some(dupe) => {
+                    let (namespace, path) = id(&dupe[0]);
+                    Err(GenerateError::Duplicate { kind, id: format!("{namespace}:{path}") })
+                }
+                None => Ok(())
+            }
         }
+
+        sort(&mut self.blocks, "block", |b| (&b.namespace, &b.path))?;
+        sort(&mut self.items, "item", |i| (&i.namespace, &i.path))?;
         Ok(())
     }
 

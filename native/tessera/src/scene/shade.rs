@@ -1,8 +1,8 @@
-use super::quad::{display_linear, normal_matrix};
+use super::quad::normal_matrix;
 use crate::direction::Direction;
-use crate::resource::model::{GuiLight, Transform};
+use crate::resource::model::GuiLight;
 use crate::resource::tint::{ColorMap, TintSource};
-use ultraviolet::Vec3;
+use ultraviolet::{Mat3, Vec3};
 
 /// Front on flat item Y-flipped light poses. Mojang renders any gui item through a model view that
 /// flips y for shading. These constants are calculated from Mojang's [Lighting](https://mcsrc.dev/2/26.2/com/mojang/blaze3d/platform/Lighting) class:
@@ -94,9 +94,9 @@ pub fn fixed_factors(shade: f32, tint: u32) -> [u32; 3] {
     [fix(tr), fix(tg), fix(tb)]
 }
 
-pub fn shade_table(display: &Transform, light: GuiLight) -> [f32; 6] {
+pub fn shade_table(linear: Mat3, light: GuiLight) -> [f32; 6] {
     let lights = lights(light);
-    let mat = normal_matrix(display_linear(display));
+    let mat = normal_matrix(linear);
     Direction::ALL.map(|dir| shade_for((mat * dir.unit()).normalized(), lights))
 }
 

@@ -1,4 +1,4 @@
-use super::rasterize::{PassKind, QuadKind};
+use super::rasterize::{PassKind, QuadKind, Side};
 use crate::direction::Direction;
 use crate::direction::Quadrant;
 use crate::resource::blockstate::ModelState;
@@ -37,6 +37,7 @@ pub struct ScreenQuad {
     pub shade: f32,
     pub pass: PassKind,
     pub kind: QuadKind,
+    pub side: Side,
 }
 
 pub(crate) struct Surface {
@@ -46,6 +47,7 @@ pub(crate) struct Surface {
     pub shade: f32,
     pub pass: PassKind,
     pub kind: QuadKind,
+    pub side: Side,
 }
 
 impl ScreenQuad {
@@ -77,6 +79,7 @@ impl ScreenQuad {
             shade: surface.shade,
             pass: surface.pass,
             kind: surface.kind,
+            side: surface.side,
         }
     }
 
@@ -161,6 +164,7 @@ pub(crate) fn to_screen(point: Vec3, size: f32) -> [f32; 3] {
     ]
 }
 
+#[derive(Copy, Clone)]
 pub struct Affine {
     pub linear: Mat3,
     pub translation: Vec3,
@@ -307,7 +311,7 @@ pub(crate) fn project(
     textures: &FastHashMap<String, Arc<Sprite>>,
     tints: &[u32],
     state: &ModelState,
-    display: &Transform,
+    view: &Affine,
     shades: &[f32; 6],
     size: u32,
     out: &mut Vec<ScreenQuad>,
@@ -315,7 +319,7 @@ pub(crate) fn project(
     let size = size as f32;
     let center = Vec3::broadcast(0.5);
     let state_mat = state_matrix(state);
-    let world = Affine::gui(display).after(&Affine::about(state_mat, center));
+    let world = view.after(&Affine::about(state_mat, center));
 
     let locks: [Option<Mat3>; 6] = std::array::from_fn(|i| {
         state
@@ -375,6 +379,8 @@ pub(crate) fn project(
                     .unwrap_or(u32::MAX),
                 shade: shades[shade as usize],
                 kind: QuadKind::Parallelogram,
+                // back faces are culled above
+                side: Side::Front,
             };
 
             out.push(ScreenQuad::new(quad_corners, det, [uv[0], uv[3], uv[1]], surface));

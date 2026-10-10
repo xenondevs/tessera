@@ -1,0 +1,79 @@
+{
+  "format": 1,
+  "minecraft": "26.3",
+  "item": "minecraft:creeper_head",
+  "materials": [
+    {
+      "texture": {
+        "path": "minecraft:textures/entity/creeper/creeper.png"
+      },
+      "pipeline": "minecraft:pipeline/entity_cutout_z_offset",
+      "cull": false,
+      "blend": false,
+      "alpha_cutout": 0.1,
+      "depth_write": true,
+      "layering": "view_offset_z",
+      "light_emission": 0
+    }
+  ],
+  "default_leaf": {
+    "capture": [
+      {
+        "kind": "model",
+        "order": 0,
+        "material": 0,
+        "pose": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "parts": [
+          {
+            "path": "head",
+            "pose": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            "cubes": [
+              {
+                "from": [-4.0, -8.0, -4.0],
+                "to": [4.0, 0.0, 4.0],
+                "faces": {
+                  "down": [
+                    [0.125, 0.25],
+                    [0.25, 0.25],
+                    [0.125, 0.0],
+                    [0.25, 0.0]
+                  ],
+                  "up": [
+                    [0.25, 0.25],
+                    [0.375, 0.25],
+                    [0.25, 0.0],
+                    [0.375, 0.0]
+                  ],
+                  "north": [
+                    [0.125, 0.25],
+                    [0.25, 0.25],
+                    [0.125, 0.5],
+                    [0.25, 0.5]
+                  ],
+                  "south": [
+                    [0.5, 0.25],
+                    [0.375, 0.25],
+                    [0.5, 0.5],
+                    [0.375, 0.5]
+                  ],
+                  "west": [
+                    [0.125, 0.25],
+                    [0.125, 0.5],
+                    [0.0, 0.25],
+                    [0.0, 0.5]
+                  ],
+                  "east": [
+                    [0.25, 0.25],
+                    [0.25, 0.5],
+                    [0.375, 0.25],
+                    [0.375, 0.5]
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

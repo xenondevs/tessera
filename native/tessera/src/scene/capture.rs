@@ -1,12 +1,11 @@
 use super::quad;
 use super::quad::{Affine, ScreenQuad, Surface, edge_det, normal_matrix, to_screen};
-use super::rasterize::{AlphaCutout, PassKind, QuadKind};
+use super::rasterize::{AlphaCutout, PassKind, QuadKind, Side};
 use super::shade::shade_for;
 use crate::capture::lookup::Capture;
 use crate::direction::{Direction, Quadrant};
 use crate::resource::ResourceId;
 use crate::resource::cache::Caches;
-use crate::resource::model::Transform;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -71,8 +70,8 @@ pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], sub
     }
 
     let diag = caches.diagnostics();
-    let mut out = Vec::with_capacity(capture.block.materials.len());
-    for mat in capture.block.materials {
+    let mut out = Vec::with_capacity(capture.materials.len());
+    for mat in capture.materials {
         let sprite = match ResourceId::from_str(mat.texture) {
             Ok(id) => match caches
                 .textures
@@ -122,7 +121,7 @@ pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], sub
 pub(crate) fn project(
     cap: Capture<'_>,
     materials: &[CapturedMaterial],
-    display: &Transform,
+    view: &Affine,
     lights: &[Vec3; 2],
     shades: &[f32; 6],
     size: u32,
@@ -141,7 +140,7 @@ pub(crate) fn project(
         }
     }
 
-    fn to_surface(mat: &CapturedMaterial, shade: f32, kind: QuadKind) -> Surface {
+    fn to_surface(mat: &CapturedMaterial, shade: f32, kind: QuadKind, side: Side) -> Surface {
         Surface {
             sprite: mat.sprite.clone(),
             light_emission: mat.light_emission,
@@ -149,22 +148,22 @@ pub(crate) fn project(
             shade,
             pass: mat.pass,
             kind,
+            side,
         }
     }
 
     let size = size as f32;
-    let gui = Affine::gui(display);
     let shade = |mat: &CapturedMaterial, normal: Vec3| {
         mat.shade
             .map_or_else(|| shade_for(normal.normalized(), lights), |dir| shades[dir as usize])
     };
 
-    let mut draws: Vec<&Draw> = cap.state.draws.iter().collect();
+    let mut draws: Vec<&Draw> = cap.draws.iter().collect();
     draws.sort_by_key(|d| d.order);
 
     let mut projected = 0;
     for draw in draws {
-        let draw_affine = gui.after(&to_affine(draw.pose));
+        let draw_affine = view.after(&to_affine(draw.pose));
         match draw.geometry {
             DrawGeometry::Model { material, parts } => {
                 let mat = &materials[usize::from(material)];
@@ -192,13 +191,17 @@ pub(crate) fn project(
                             let quad_corners = [corners[p0], corners[p1], corners[p2]];
                             let det = edge_det(&quad_corners);
 
-                            let front = -OUTWARD[dir as usize] * handedness * det > 0.0;
-                            if det == 0.0 || (!front && mat.cull) {
+                            let side = if -OUTWARD[dir as usize] * handedness * det > 0.0 {
+                                Side::Front
+                            } else {
+                                Side::Back
+                            };
+                            if det == 0.0 || (side == Side::Back && mat.cull) {
                                 continue;
                             }
 
                             let normal = normals * dir.unit();
-                            let surface = to_surface(mat, shade(mat, normal), QuadKind::Parallelogram);
+                            let surface = to_surface(mat, shade(mat, normal), QuadKind::Parallelogram, side);
                             out.push(ScreenQuad::new(quad_corners, det, face.uvs, surface))
                         }
                     }
@@ -214,7 +217,11 @@ pub(crate) fn project(
                     let screen = [p0, p1, p2].map(|p| to_screen(draw_affine.apply(p), size));
                     let [uv0, uv1, uv2] = quad.uvs;
 
-                    let front = -handedness * edge_det(&screen) > 0.0;
+                    let side = if -handedness * edge_det(&screen) > 0.0 {
+                        Side::Front
+                    } else {
+                        Side::Back
+                    };
                     let (corners, uvs, kind) = match quad.kind {
                         CapQuadKind::Parallelogram => {
                             ([screen[1], screen[0], screen[2]], [uv1, uv0, uv2], QuadKind::Parallelogram)
@@ -222,12 +229,12 @@ pub(crate) fn project(
                         CapQuadKind::Triangle => (screen, quad.uvs, QuadKind::Triangle),
                     };
                     let det = edge_det(&corners);
-                    if det == 0.0 || (!front && mat.cull) {
+                    if det == 0.0 || (side == Side::Back && mat.cull) {
                         continue;
                     }
 
                     let normal = normals * (p1 - p0).cross(p2 - p0);
-                    out.push(ScreenQuad::new(corners, det, uvs, to_surface(mat, shade(mat, normal), kind)))
+                    out.push(ScreenQuad::new(corners, det, uvs, to_surface(mat, shade(mat, normal), kind, side)))
                 }
             }
         }

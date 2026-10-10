@@ -28,3 +28,5 @@ data class StateRecord(val key: String, val renderShape: RenderShape, val result
     }
     
 }
+
+data class ItemRecord(val item: Identifier, val defaultLeaf: CaptureResult)

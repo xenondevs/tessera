@@ -17,6 +17,14 @@ pub struct State<'a> {
 }
 
 #[derive(Debug)]
+pub struct Item<'a> {
+    pub namespace: &'a str,
+    pub path: &'a str,
+    pub materials: &'a [&'a Material<'a>],
+    pub draws: &'a [Draw<'a>],
+}
+
+#[derive(Debug)]
 pub struct Draw<'a> {
     pub order: i32,
     pub pose: &'a Pose,

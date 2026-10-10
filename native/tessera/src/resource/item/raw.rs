@@ -1,8 +1,9 @@
 use crate::resource::ResourceId;
 use crate::util::{CompactList, NonEmptyVec};
-use serde::de::{Error, SeqAccess, Visitor};
+use serde::de::{Error, Expected, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::fmt::Formatter;
+use serde::de::value::MapAccessDeserializer;
 use tessera_derive::mc_registry_enum;
 
 #[derive(Deserialize)]
@@ -38,6 +39,7 @@ pub enum RawItemModel {
     },
     Special {
         base: ResourceId,
+        model: RawSpecialModel,
         transformation: Option<RawTransformation>,
     },
     Composite {
@@ -62,6 +64,67 @@ pub enum RawItemModel {
     },
     #[mc_registry(other)]
     Unknown,
+}
+
+#[mc_registry_enum]
+#[derive(Deserialize)]
+pub enum RawSpecialModel {
+    Banner {
+        color: Box<str>,
+        #[serde(default = "ground")]
+        attachment: Box<str>,
+    },
+    Bell,
+    Book {
+        open_angle: f32,
+        page1: f32,
+        page2: f32,
+    },
+    Chest {
+        texture: ResourceId,
+        #[serde(default)]
+        openness: f32,
+        #[serde(default)]
+        chest_type: ChestType,
+    },
+    Conduit,
+    CopperGolemStatue {
+        texture: ResourceId,
+        pose: Box<str>,
+    },
+    DecoratedPot,
+    EndCube {
+        effect: Box<str>,
+    },
+    Head {
+        kind: Box<str>,
+        texture: Option<ResourceId>,
+        #[serde(default)]
+        animation: f32,
+    },
+    PlayerHead,
+    Shield,
+    ShulkerBox {
+        texture: ResourceId,
+        #[serde(default)]
+        openness: f32,
+    },
+    Trident,
+    #[mc_registry(other)]
+    Unknown,
+}
+
+fn ground() -> Box<str> {
+    Box::from("ground")
+}
+
+#[derive(Copy, Clone, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChestType {
+    #[default]
+    Single,
+    Left,
+    Right,
 }
 
 /// [ref](https://mcsrc.dev/1/26.2/net/minecraft/client/renderer/item/properties/select/SelectItemModelProperties)
@@ -162,12 +225,97 @@ pub enum RangeProperty {
     },
 }
 
-#[derive(Deserialize)]
-pub struct RawTransformation {
-    pub translation: [f32; 3],
-    pub left_rotation: [f32; 4],
-    pub scale: [f32; 3],
-    pub right_rotation: [f32; 4],
+pub enum RawTransformation {
+    Decomposed {
+        translation: [f32; 3],
+        left_rotation: RawRotation,
+        scale: [f32; 3],
+        right_rotation: RawRotation,
+    },
+    /// row major 4x4
+    Matrix([f32; 16]),
+}
+
+fn visit_fixed<'de, A: SeqAccess<'de>, const N: usize>(mut seq: A, expected: &dyn Expected) -> Result<[f32; N], A::Error> {
+    let mut out = [0.0; N];
+    for (i, slot) in out.iter_mut().enumerate() {
+        *slot = seq.next_element()?.ok_or_else(|| A::Error::invalid_length(i, expected))?;
+    }
+    if seq.next_element::<IgnoredAny>()?.is_some() {
+        return Err(A::Error::invalid_length(N + 1, expected));
+    }
+    Ok(out)
+}
+
+impl<'de> Deserialize<'de> for RawTransformation {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Decomposed {
+            translation: [f32; 3],
+            left_rotation: RawRotation,
+            scale: [f32; 3],
+            right_rotation: RawRotation,
+        }
+
+        struct TransformationVisitor;
+        impl<'de> Visitor<'de> for TransformationVisitor {
+            type Value = RawTransformation;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("a transformation object or a 16-element array of floats (row major 4x4 matrix)")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+                visit_fixed(seq, &self).map(RawTransformation::Matrix)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                let Decomposed { translation, left_rotation, scale, right_rotation } =
+                    Decomposed::deserialize(MapAccessDeserializer::new(map))?;
+                Ok(RawTransformation::Decomposed { translation, left_rotation, scale, right_rotation })
+            }
+        }
+
+        deserializer.deserialize_any(TransformationVisitor)
+    }
+}
+
+pub enum RawRotation {
+    /// `[x, y, z, w]`
+    Quaternion([f32; 4]),
+    /// `angle` in radians
+    AxisAngle { angle: f32, axis: [f32; 3] },
+}
+
+impl<'de> Deserialize<'de> for RawRotation {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct AxisAngle {
+            angle: f32,
+            axis: [f32; 3],
+        }
+
+        struct RotationVisitor;
+        impl<'de> Visitor<'de> for RotationVisitor {
+            type Value = RawRotation;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("a quaternion array [x, y, z, w] or an object with angle and axis")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+                visit_fixed(seq, &self).map(RawRotation::Quaternion)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                let AxisAngle { angle, axis } =
+                    AxisAngle::deserialize(MapAccessDeserializer::new(map))?;
+                Ok(RawRotation::AxisAngle { angle, axis })
+            }
+        }
+
+        deserializer.deserialize_any(RotationVisitor)
+    }
 }
 
 #[mc_registry_enum]

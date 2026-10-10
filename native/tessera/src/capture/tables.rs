@@ -1,4 +1,5 @@
 pub use self::generated::BLOCKS;
+pub use self::generated::ITEMS;
 
 #[rustfmt::skip]
 #[allow(clippy::all, clippy::pedantic, unused_imports)]

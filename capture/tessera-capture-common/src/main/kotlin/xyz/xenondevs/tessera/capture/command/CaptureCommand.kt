@@ -17,6 +17,7 @@ import net.minecraft.world.phys.HitResult
 import xyz.xenondevs.tessera.capture.dump.CaptureResult
 import xyz.xenondevs.tessera.capture.dump.Capturer
 import xyz.xenondevs.tessera.capture.dump.DiscardReason
+import xyz.xenondevs.tessera.capture.dump.ItemCapturer
 import xyz.xenondevs.tessera.capture.dump.sink.BlockRecord
 import xyz.xenondevs.tessera.capture.dump.sink.RawRecordWriter
 import xyz.xenondevs.tessera.capture.dump.sink.StateRecord
@@ -108,6 +109,8 @@ object CaptureCommand {
     private fun <S : Any> dumpEmbed(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
         val directory = Minecraft.getInstance().gameDirectory.toPath().resolve("tessera-capture").resolve("embed")
         directory.deleteRecursively()
+        val blockDir = directory.resolve("blocks")
+        val itemDir = directory.resolve("items")
         
         val minecraftVer = SharedConstants.getCurrentVersion().id()
         var captured = 0
@@ -132,11 +135,19 @@ object CaptureCommand {
             }
             if (states.none(StateRecord::isNeeded)) continue
             
-            val file = directory.resolve(id.namespace).resolve("${id.path}.json")
+            val file = blockDir.resolve(id.namespace).resolve("${id.path}.json")
             file.createParentDirectories()
             file.writeText(RawRecordWriter.write(BlockRecord(id, states), minecraftVer))
         }
-        val summary = "Captured $captured states, $capturedEmpty empty, $noRenderer with no renderer, $discarded discarded. Wrote "
+        for (item in BuiltInRegistries.ITEM) {
+            val id = BuiltInRegistries.ITEM.getKey(item)
+            val record = ItemCapturer.capture(id, item) ?: continue
+            
+            val file = itemDir.resolve(id.namespace).resolve("${id.path}.json")
+            file.createParentDirectories()
+            file.writeText(RawRecordWriter.write(record, minecraftVer))
+        }
+        val summary = "Captured $captured models, $capturedEmpty empty, $noRenderer with no renderer, $discarded discarded. Wrote "
         fb.info(ctx.source, Component.text(summary).append(diskLink(directory)))
         if (discardReasons.isNotEmpty())
             fb.error(ctx.source, Component.text("Discard reasons: $discardReasons"))

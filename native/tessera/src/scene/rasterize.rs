@@ -72,6 +72,12 @@ pub enum QuadKind {
     Triangle,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Side {
+    Front,
+    Back,
+}
+
 trait Pass {
     const WRITES_DEPTH: bool;
     fn depth_passes(depth: f32, stored: f32) -> bool;
@@ -348,10 +354,11 @@ pub fn render(out: &mut Target, quads: &mut [ScreenQuad], depth: bool) {
         PassKind::Cutout(_) => 1,
         PassKind::Translucent => 2,
     };
+    let side = |q: &ScreenQuad| !depth && q.side == Side::Front;
     quads.sort_by(|a, b| {
         rank(a).cmp(&rank(b)).then_with(|| match a.pass {
             PassKind::Translucent => far(b).total_cmp(&far(a)).then_with(|| near(a).total_cmp(&near(b))),
-            _ => near(a).total_cmp(&near(b)),
+            _ => side(a).cmp(&side(b)).then_with(|| near(a).total_cmp(&near(b)))
         })
     });
 

@@ -255,7 +255,7 @@ fn missing_unresolved() -> &'static Arc<UnresolvedModel> {
     })
 }
 
-fn missing_resolved() -> &'static Arc<Model> {
+pub(crate) fn missing_resolved() -> &'static Arc<Model> {
     static MISSING: OnceLock<Arc<Model>> = OnceLock::new();
     MISSING.get_or_init(|| {
         Arc::new(collapse(

@@ -175,9 +175,20 @@ pub(super) fn emit(pools: &Pools) -> String {
     let block_names = (0..pools.blocks.len()).map(|i| static_name("BLOCK", i));
     let block_count = Literal::usize_unsuffixed(pools.blocks.len());
 
+    let items = pools.items.iter().enumerate().map(|(i, item)| {
+        let name = static_name("ITEM", i);
+        let (namespace, path) = (&item.namespace, &item.path);
+        let (materials, draws) = (static_name("MATERIALS", item.materials), static_name("DRAWS", item.draws));
+        quote! {
+            static #name: Item<'static> = Item { namespace: #namespace, path: #path, materials: &#materials, draws: &#draws };
+        }
+    });
+    let item_names = (0..pools.items.len()).map(|i| static_name("ITEM", i));
+    let item_count = Literal::usize_unsuffixed(pools.items.len());
+
     let tokens = quote! {
         use tessera_capture::model::{
-            Block, Cube, DepthBias, Direction, Draw, DrawGeometry, Face, Layering, Material, Part, Pose, Quad, QuadKind,
+            Block, Cube, DepthBias, Direction, Draw, DrawGeometry, Face, Item, Layering, Material, Part, Pose, Quad, QuadKind,
             RenderShape, State
         };
 
@@ -192,8 +203,10 @@ pub(super) fn emit(pools: &Pools) -> String {
         #states
         #properties
         #(#blocks)*
+        #(#items)*
 
         pub static BLOCKS: [&Block<'static>; #block_count] = [#(&#block_names),*];
+        pub static ITEMS: [&Item<'static>; #item_count] = [#(&#item_names),*];
     };
 
     let file: syn::File = syn::parse2(tokens).expect("valid emit");
