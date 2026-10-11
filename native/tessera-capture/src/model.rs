@@ -33,8 +33,22 @@ pub struct Draw<'a> {
 
 #[derive(Debug)]
 pub enum DrawGeometry<'a> {
-    Model { material: u8, parts: &'a [Part<'a>] },
-    BlockModel { quads: &'a [Quad] },
+    Model {
+        material: u8,
+        parts: &'a [Part<'a>],
+    },
+    BlockModel {
+        quads: &'a [Quad],
+    },
+    Effect {
+        effect: &'a Effect<'a>,
+        quads: &'a [[[f32; 3]; 3]],
+    },
+}
+
+#[derive(Debug)]
+pub enum Effect<'a> {
+    EndPortal { layers: u8, sky: &'a str, portal: &'a str },
 }
 
 #[derive(Debug)]

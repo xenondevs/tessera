@@ -1,9 +1,9 @@
 use crate::resource::ResourceId;
 use crate::util::{CompactList, NonEmptyVec};
+use serde::de::value::MapAccessDeserializer;
 use serde::de::{Error, Expected, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::fmt::Formatter;
-use serde::de::value::MapAccessDeserializer;
 use tessera_derive::mc_registry_enum;
 
 #[derive(Deserialize)]
@@ -94,7 +94,7 @@ pub enum RawSpecialModel {
     },
     DecoratedPot,
     EndCube {
-        effect: Box<str>,
+        effect: EndCubeEffect,
     },
     Head {
         kind: Box<str>,
@@ -116,6 +116,13 @@ pub enum RawSpecialModel {
 
 fn ground() -> Box<str> {
     Box::from("ground")
+}
+
+#[derive(Copy, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EndCubeEffect {
+    Portal,
+    Gateway,
 }
 
 #[derive(Copy, Clone, Default, Deserialize)]
@@ -308,8 +315,7 @@ impl<'de> Deserialize<'de> for RawRotation {
             }
 
             fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-                let AxisAngle { angle, axis } =
-                    AxisAngle::deserialize(MapAccessDeserializer::new(map))?;
+                let AxisAngle { angle, axis } = AxisAngle::deserialize(MapAccessDeserializer::new(map))?;
                 Ok(RawRotation::AxisAngle { angle, axis })
             }
         }

@@ -114,8 +114,16 @@ pub fn generate(input: &Path, minecraft_version: &str, out: &Path) -> Result<Vec
     }
 
     let ignored_fail: Ignored = parse(&input.join("ignored_discards.json"))?;
-    let mut block_discards = Discards { kind: "block", ignored: ignored_fail.blocks, ..Default::default() };
-    let mut item_discards = Discards { kind: "item", ignored: ignored_fail.items, ..Default::default() };
+    let mut block_discards = Discards {
+        kind: "block",
+        ignored: ignored_fail.blocks,
+        ..Default::default()
+    };
+    let mut item_discards = Discards {
+        kind: "item",
+        ignored: ignored_fail.items,
+        ..Default::default()
+    };
 
     let mut pools = Pools::default();
     for path in files(&input.join("blocks"))? {
@@ -123,7 +131,11 @@ pub fn generate(input: &Path, minecraft_version: &str, out: &Path) -> Result<Vec
         check_file(&path, file.format, &file.minecraft_version, minecraft_version)?;
 
         for (key, state) in &file.states {
-            block_discards.record(&file.block, &format!("[{key}]"), state.discarded.as_deref().unwrap_or_default());
+            block_discards.record(
+                &file.block,
+                &format!("[{key}]"),
+                state.discarded.as_deref().unwrap_or_default(),
+            );
         }
         pools.block(&file, &path)?;
     }

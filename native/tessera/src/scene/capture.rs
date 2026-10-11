@@ -1,16 +1,17 @@
 use super::quad;
 use super::quad::{Affine, ScreenQuad, Surface, edge_det, normal_matrix, to_screen};
-use super::rasterize::{AlphaCutout, PassKind, QuadKind, Side};
+use super::rasterize::{AlphaCutout, PassKind, QuadKind, Shader, Side};
 use super::shade::shade_for;
 use crate::capture::lookup::Capture;
 use crate::direction::{Direction, Quadrant};
 use crate::resource::ResourceId;
 use crate::resource::cache::Caches;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
+use super::end_portal::EndPortal;
 use std::str::FromStr;
 use std::sync::Arc;
 use tessera_capture::model;
-use tessera_capture::model::{Draw, DrawGeometry, Pose, QuadKind as CapQuadKind};
+use tessera_capture::model::{Draw, DrawGeometry, Effect, Pose, QuadKind as CapQuadKind};
 use ultraviolet::{Mat3, Vec3};
 
 /// A face's corners c0 < c1 < c2 in ascending index order
@@ -55,6 +56,42 @@ pub struct CapturedMaterial {
     shade: Option<Direction>,
 }
 
+async fn sprite(caches: &Caches, texture: &str, subject: &ResourceId) -> Arc<Sprite> {
+    let diag = caches.diagnostics();
+    let Ok(id) = ResourceId::from_str(texture) else {
+        diag.error(subject, || format!("Capture texture {texture} has an invalid id"));
+        return missing_sprite().clone();
+    };
+    match caches
+        .textures
+        .sprite(&caches.resources, &id, Quadrant::R0, (0.0, 0.0), (1.0, 1.0))
+        .await
+    {
+        Ok(sprite) => sprite,
+        Err(err) => {
+            diag.error(subject, || {
+                format!("Failed to resolve sprite for captured texture {texture}: {err}")
+            });
+            missing_sprite().clone()
+        }
+    }
+}
+
+pub async fn shaders(caches: &Caches, capture: Capture<'_>, subject: &ResourceId) -> Vec<Shader> {
+    let mut out = Vec::with_capacity(capture.draws.len());
+    for draw in capture.draws {
+        out.push(match draw.geometry {
+            DrawGeometry::Effect { effect: Effect::EndPortal { layers, sky, portal }, .. } => {
+                let sky = sprite(caches, sky, subject).await;
+                let portal = sprite(caches, portal, subject).await;
+                Shader::EndPortal(Arc::new(EndPortal::new(sky, portal, *layers, 0.0)))
+            }
+            _ => Shader::Sprite,
+        })
+    }
+    out
+}
+
 pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], subject: &ResourceId) -> Vec<CapturedMaterial> {
     fn cutout(value: f32, subject: &ResourceId, caches: &Caches) -> AlphaCutout {
         if value == 0.1 {
@@ -69,28 +106,9 @@ pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], sub
         if value < 0.3 { AlphaCutout::Tenth } else { AlphaCutout::Half }
     }
 
-    let diag = caches.diagnostics();
     let mut out = Vec::with_capacity(capture.materials.len());
     for mat in capture.materials {
-        let sprite = match ResourceId::from_str(mat.texture) {
-            Ok(id) => match caches
-                .textures
-                .sprite(&caches.resources, &id, Quadrant::R0, (0.0, 0.0), (1.0, 1.0))
-                .await
-            {
-                Ok(sprite) => sprite,
-                Err(err) => {
-                    diag.error(subject, || {
-                        format!("Failed to resolve sprite for captured texture {}: {err}", mat.texture)
-                    });
-                    missing_sprite().clone()
-                }
-            },
-            Err(_) => {
-                diag.error(subject, || format!("Capture texture {} has an invalid id", mat.texture));
-                missing_sprite().clone()
-            }
-        };
+        let sprite = sprite(caches, mat.texture, subject).await;
 
         let pass = if mat.blend {
             PassKind::Translucent
@@ -121,6 +139,7 @@ pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], sub
 pub(crate) fn project(
     cap: Capture<'_>,
     materials: &[CapturedMaterial],
+    shaders: &[Shader],
     view: &Affine,
     lights: &[Vec3; 2],
     shades: &[f32; 6],
@@ -143,6 +162,7 @@ pub(crate) fn project(
     fn to_surface(mat: &CapturedMaterial, shade: f32, kind: QuadKind, side: Side) -> Surface {
         Surface {
             sprite: mat.sprite.clone(),
+            shader: Shader::Sprite,
             light_emission: mat.light_emission,
             tint: mat.tint,
             shade,
@@ -158,11 +178,11 @@ pub(crate) fn project(
             .map_or_else(|| shade_for(normal.normalized(), lights), |dir| shades[dir as usize])
     };
 
-    let mut draws: Vec<&Draw> = cap.draws.iter().collect();
-    draws.sort_by_key(|d| d.order);
+    let mut draws: Vec<(usize, &Draw)> = cap.draws.iter().enumerate().collect();
+    draws.sort_by_key(|(_, draw)| draw.order);
 
     let mut projected = 0;
-    for draw in draws {
+    for (idx, draw) in draws {
         let draw_affine = view.after(&to_affine(draw.pose));
         match draw.geometry {
             DrawGeometry::Model { material, parts } => {
@@ -234,7 +254,36 @@ pub(crate) fn project(
                     }
 
                     let normal = normals * (p1 - p0).cross(p2 - p0);
-                    out.push(ScreenQuad::new(corners, det, uvs, to_surface(mat, shade(mat, normal), kind, side)))
+                    out.push(ScreenQuad::new(
+                        corners,
+                        det,
+                        uvs,
+                        to_surface(mat, shade(mat, normal), kind, side),
+                    ))
+                }
+            }
+            DrawGeometry::Effect { quads, .. } => {
+                let handedness = draw_affine.linear.determinant().signum();
+                for corners in quads {
+                    projected += 1;
+                    let p @ [p0, p1, p2] = corners.map(|p| to_screen(draw_affine.apply(Vec3::from(p)), size));
+                    if -handedness * edge_det(&p) <= 0.0 {
+                        continue;
+                    }
+
+                    let corners = [p1, p0, p2];
+                    let surface = Surface {
+                        // TODO enum for these since theyre mutually exclusive
+                        sprite: missing_sprite().clone(),
+                        shader: shaders[idx].clone(),
+                        light_emission: 0,
+                        tint: u32::MAX,
+                        shade: 1.0,
+                        pass: PassKind::Opaque,
+                        kind: QuadKind::Parallelogram,
+                        side: Side::Front,
+                    };
+                    out.push(ScreenQuad::new(corners, edge_det(&corners), [[0.0; 2]; 3], surface))
                 }
             }
         }

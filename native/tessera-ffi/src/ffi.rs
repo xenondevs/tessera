@@ -1,10 +1,10 @@
 use std::cell::RefCell;
-use std::ffi::{c_char, CString};
-use std::{panic, ptr};
+use std::ffi::{CString, c_char};
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
+use std::{panic, ptr};
 
-pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output=T> + Send + 'a>>;
+pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };

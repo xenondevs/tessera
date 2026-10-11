@@ -5,8 +5,8 @@ pub mod shade;
 pub mod rasterize;
 pub mod blockstate;
 pub mod capture;
+mod end_portal;
 
-use self::layered::Layer;
 use self::quad::Rescale;
 use self::rasterize::Target;
 use crate::capture::lookup::{Capture, lookup_block};
@@ -15,19 +15,19 @@ use crate::direction::Quadrant;
 use crate::resource::ResourceId;
 use crate::resource::blockstate::{ModelPart, ModelState};
 use crate::resource::cache::Caches;
-use crate::resource::item::{ItemModel, Leaf, StaticContext};
+use crate::resource::item::{Leaf, StaticContext};
+use crate::resource::model::cache::missing_resolved;
 use crate::resource::model::{DisplayContext, Geometry, GuiLight, Model, Transform};
 use crate::resource::texture::TextureSlot;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use crate::resource::tint::TintSource;
-use crate::scene::quad::{Affine, display_linear};
+use self::quad::Affine;
 use crate::util::FastHashMap;
 use image::RgbaImage;
 use std::str::FromStr;
 use std::sync::Arc;
 use tessera_capture::model::RenderShape;
 use thiserror::Error;
-use crate::resource::model::cache::missing_resolved;
 
 const FULL: ((f32, f32), (f32, f32)) = ((0.0, 0.0), (1.0, 1.0));
 
@@ -174,9 +174,11 @@ impl Renderer {
                     let view = view(&base.display[DisplayContext::Gui as usize], local);
                     let shades = shade::shade_table(view.linear, base.gui_light);
                     let mats = capture::materials(&self.caches, *capture, &[], subject).await;
+                    let shaders = capture::shaders(&self.caches, *capture, subject).await;
                     elements += capture::project(
                         *capture,
                         &mats,
+                        &shaders,
                         &view,
                         shade::lights(base.gui_light),
                         &shades,
@@ -203,9 +205,7 @@ impl Renderer {
                 }
                 Leaf::Missing => {
                     let model = missing_resolved();
-                    let Geometry::Cuboid(list) = &model.geometry else {
-                        unreachable!()
-                    };
+                    let Geometry::Cuboid(list) = &model.geometry else { unreachable!() };
                     let view = view(&model.display[DisplayContext::Gui as usize], &Affine::identity());
                     let shades = shade::shade_table(view.linear, model.gui_light);
                     let textures = self.sprites_for(model, subject).await;
@@ -273,9 +273,12 @@ impl Renderer {
         for part in parts {
             tables.push(self.sprites_for(&part.model, subject).await);
         }
-        let captured_materials = match captured {
-            Some(captured) => capture::materials(&self.caches, captured, tints, subject).await,
-            None => Vec::new(),
+        let (captured_materials, captured_shaders) = match captured {
+            Some(captured) => (
+                capture::materials(&self.caches, captured, tints, subject).await,
+                capture::shaders(&self.caches, captured, subject).await,
+            ),
+            None => (Vec::new(), Vec::new()),
         };
         let (display, light) = parts.first().map_or((Transform::BLOCK_GUI, GuiLight::Side), |part| {
             (
@@ -298,6 +301,7 @@ impl Renderer {
             elements += capture::project(
                 cap,
                 &captured_materials,
+                &captured_shaders,
                 &view,
                 shade::lights(light),
                 &shades,

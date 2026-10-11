@@ -1,6 +1,6 @@
 use super::raw::{RawItem, RawItemModel, RawRotation, RawSpecialModel, RawTransformation};
 use super::{Item, ItemError, ItemModel};
-use crate::capture::lookup;
+use crate::capture::{builtin, lookup};
 use crate::diagnostics::Diagnostics;
 use crate::resource::ResourceId;
 use crate::resource::model::cache::ModelCache;
@@ -107,7 +107,11 @@ impl ItemCache {
             Some(raw) => {
                 let (affine, projective) = raw.to_affine();
                 if projective {
-                    diag.warn_keyed(id, "projective-transform", || "transformation has a projective bottom row, which was dropped.");
+                    diag.warn_keyed(
+                        id,
+                        "projective-transform",
+                        || "transformation has a projective bottom row, which was dropped.",
+                    );
                 }
                 parent.after(&affine)
             }
@@ -143,14 +147,21 @@ impl ItemCache {
                     entries,
                     fallback: fallback.map(|model| Box::new(Self::resolve(models, id, *model, &local, diag))),
                 }
-            },
+            }
             RawItemModel::Special { base, model, transformation } => {
-                let capture = lookup::lookup_item(id);
+                let capture = match &model {
+                    RawSpecialModel::EndCube { effect } => Some(builtin::end_cube(*effect)),
+                    _ => lookup::lookup_item(id),
+                };
                 if capture.is_none() && matches!(model, RawSpecialModel::Unknown) {
                     diag.warn_keyed(id, "unsupported-special-model", || "unsupported special model type");
                 }
                 match model_of(&base) {
-                    Some(model) => ItemModel::Special { base: model, local: compose(transformation.as_ref()), capture },
+                    Some(model) => ItemModel::Special {
+                        base: model,
+                        local: compose(transformation.as_ref()),
+                        capture,
+                    },
                     None => ItemModel::Empty,
                 }
             }
@@ -162,7 +173,7 @@ impl ItemCache {
                         .map(|model| Self::resolve(models, id, model, &local, diag))
                         .collect(),
                 )
-            },
+            }
             RawItemModel::Select { property, cases, fallback, transformation } => {
                 let local = compose(transformation.as_ref());
                 ItemModel::Select {
@@ -173,7 +184,7 @@ impl ItemCache {
                         .collect(),
                     fallback: fallback.map(|model| Box::new(Self::resolve(models, id, *model, &local, diag))),
                 }
-            },
+            }
             RawItemModel::Condition { property, on_true, on_false, transformation } => {
                 let local = compose(transformation.as_ref());
                 ItemModel::Condition {
@@ -181,7 +192,7 @@ impl ItemCache {
                     on_true: Box::new(Self::resolve(models, id, *on_true, &local, diag)),
                     on_false: Box::new(Self::resolve(models, id, *on_false, &local, diag)),
                 }
-            },
+            }
             RawItemModel::Empty | RawItemModel::BundleSelectedItem => ItemModel::Empty,
             RawItemModel::Unknown => {
                 diag.warn_keyed(id, "unsupported-item-model", || "unsupported item model type");
@@ -205,7 +216,8 @@ impl RawTransformation {
     pub fn to_affine(&self) -> (Affine, bool) {
         match self {
             RawTransformation::Decomposed { translation, left_rotation, scale, right_rotation } => {
-                let linear = left_rotation.to_matrix() * Mat3::from_nonuniform_scale(Vec3::from(scale)) * right_rotation.to_matrix();
+                let linear =
+                    left_rotation.to_matrix() * Mat3::from_nonuniform_scale(Vec3::from(scale)) * right_rotation.to_matrix();
                 (Affine { linear, translation: Vec3::from(translation) }, false)
             }
             RawTransformation::Matrix(mat) => {
@@ -213,7 +225,7 @@ impl RawTransformation {
                 let linear = Mat3::new(
                     Vec3::new(mat[0], mat[4], mat[8]),
                     Vec3::new(mat[1], mat[5], mat[9]),
-                    Vec3::new(mat[2], mat[6], mat[10])
+                    Vec3::new(mat[2], mat[6], mat[10]),
                 );
                 let projective = [mat[12], mat[13], mat[14], mat[15]] != [0.0, 0.0, 0.0, 1.0];
                 (Affine { linear, translation: Vec3::new(mat[3], mat[7], mat[11]) }, projective)
@@ -238,7 +250,7 @@ impl RawRotation {
 
                 let sin = f64::from(half).sin() as f32;
                 let cos = (1.0 - sin * sin).sqrt();
-                
+
                 // cosFromSin wraps half + pi/2 into [0, 2pi] before checking the sign. half is in [0, pi],
                 // so half + pi/2 is in [pi/2, 3pi/2]. so after the wrap, only the sign test is needed
                 [ax * sin, ay * sin, az * sin, if half + FRAC_PI_2 >= PI { -cos } else { cos }]

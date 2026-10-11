@@ -25,7 +25,12 @@ pub fn lookup_item(item: &ResourceId) -> Option<Capture<'static>> {
     }
 }
 
-pub fn find<'a>(blocks: &[&'a Block<'a>], block: &ResourceId, query: &StateQuery, diag: &Diagnostics) -> Option<(RenderShape, Capture<'a>)> {
+pub fn find<'a>(
+    blocks: &[&'a Block<'a>],
+    block: &ResourceId,
+    query: &StateQuery,
+    diag: &Diagnostics,
+) -> Option<(RenderShape, Capture<'a>)> {
     let wanted = (block.namespace.as_ref(), block.path.as_ref());
     let entry = blocks[blocks
         .binary_search_by(|entry| (entry.namespace, entry.path).cmp(&wanted))

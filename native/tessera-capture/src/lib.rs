@@ -4,6 +4,6 @@ mod generate;
 mod raw;
 
 #[cfg(feature = "generate")]
-pub use generate::{generate, GenerateError};
+pub use self::generate::{GenerateError, generate};
 
 pub mod model;

@@ -1,13 +1,13 @@
-use std::{ptr, slice};
+use crate::ffi;
 use std::sync::Arc;
-use tokio::runtime::{Builder, Runtime};
+use std::{ptr, slice};
 use tessera::diagnostics::Diagnostics;
 use tessera::resource::cache::Caches;
 use tessera::resource::pack::ResourcePack;
 use tessera::resource::resource_manager::ResourceManager;
-use tessera::scene::catalog::Catalog;
 use tessera::scene::Renderer;
-use crate::ffi;
+use tessera::scene::catalog::Catalog;
+use tokio::runtime::{Builder, Runtime};
 
 pub struct NativeRenderer {
     // decl order matters cause runtime needs to shut down in order for the last renderer arc to be the one below

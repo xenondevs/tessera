@@ -1,7 +1,9 @@
 use super::quad::ScreenQuad;
 use super::shade::fixed_factors;
 use crate::resource::texture::sprite::Blend;
+use super::end_portal::EndPortal;
 use image::RgbaImage;
+use std::sync::Arc;
 
 /// One texel in fixed-point 32.32 format
 const FIXED_ONE: f64 = (1u64 << 32) as f64;
@@ -76,6 +78,12 @@ pub enum QuadKind {
 pub enum Side {
     Front,
     Back,
+}
+
+#[derive(Clone, Debug)]
+pub enum Shader {
+    Sprite,
+    EndPortal(Arc<EndPortal>),
 }
 
 trait Pass {
@@ -168,6 +176,68 @@ impl Coverage for Triangle {
     }
 }
 
+pub(super) trait Source {
+    /// Per-row state stepped per pixel
+    type Cursor;
+
+    fn cursor(&self, x: i32, y: i32, s: f32, t: f32) -> Self::Cursor;
+    fn step(&self, cursor: &mut Self::Cursor);
+    fn color(&self, cursor: &Self::Cursor) -> u32;
+}
+
+struct TexturedSource<F> {
+    origin: [f64; 2],
+    per_s: [f64; 2],
+    per_t: [f64; 2],
+    size: [f64; 2],
+    /// Texels per pixel along a row, in 32.32
+    per_x: [i64; 2],
+    last: [i64; 2],
+    stride: usize,
+    texel: F,
+}
+
+impl<F: Fn(usize) -> u32> TexturedSource<F> {
+    fn new(quad: &ScreenQuad, texel: F) -> Self {
+        let tex = &*quad.sprite;
+        let [ds_dx, _, dt_dx, _] = quad.inverse.map(f64::from);
+        let [per_s, per_t] = quad.uv_gradient.map(|gradient| gradient.map(f64::from));
+        let size = [tex.width as f64, tex.height as f64];
+        Self {
+            origin: quad.uv_origin.map(f64::from),
+            per_s,
+            per_t,
+            size,
+            per_x: [0, 1].map(|i| ((per_s[i] * ds_dx + per_t[i] * dt_dx) * size[i] * FIXED_ONE) as i64),
+            last: [tex.width as i64 - 1, tex.height as i64 - 1],
+            stride: tex.width as usize,
+            texel,
+        }
+    }
+}
+
+impl<F: Fn(usize) -> u32> Source for TexturedSource<F> {
+    type Cursor = [i64; 2];
+
+    #[inline(always)]
+    fn cursor(&self, _: i32, _: i32, s: f32, t: f32) -> Self::Cursor {
+        let (s, t) = (s as f64, t as f64);
+        [0, 1].map(|i| ((self.origin[i] + s * self.per_s[i] + t * self.per_t[i]) * self.size[i] * FIXED_ONE) as i64)
+    }
+
+    #[inline(always)]
+    fn step(&self, cursor: &mut Self::Cursor) {
+        cursor[0] += self.per_x[0];
+        cursor[1] += self.per_x[1];
+    }
+
+    fn color(&self, &[u, v]: &Self::Cursor) -> u32 {
+        let x = (u >> 32).clamp(0, self.last[0]) as usize;
+        let y = (v >> 32).clamp(0, self.last[1]) as usize;
+        (self.texel)(y * self.stride + x)
+    }
+}
+
 #[inline(always)]
 fn modulate(texel: u32, k: [u32; 3]) -> u32 {
     let [r, g, b, a] = texel.to_le_bytes();
@@ -223,13 +293,13 @@ fn bbox(quad: &ScreenQuad, width: u32, height: u32) -> (i32, i32, i32, i32) {
 }
 
 fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad) {
-    let tex = &*quad.sprite;
     let bounds @ (min_x, min_y, max_x, max_y) = bbox(quad, out.width, out.height);
     if min_x >= max_x || min_y >= max_y {
         return;
     }
     let color_factors = fixed_factors(quad.shade, quad.tint);
-    let source = tex.image.as_chunks::<4>().0;
+    let source = quad.sprite.image.as_chunks::<4>().0;
+    // SAFETY: for both lookups, TexturedSource clamps to the sprite's last texel
     if (max_x - min_x) * (max_y - min_y) >= source.len() as i32 {
         shaded.clear();
         shaded.extend(
@@ -237,18 +307,19 @@ fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Target, shaded: 
                 .iter()
                 .map(|texel| modulate(u32::from_le_bytes(*texel), color_factors)),
         );
-        fill::<P, C, DEPTH, true>(out, shaded, quad, color_factors, bounds);
+        let lookup = |texel: usize| *unsafe { shaded.get_unchecked(texel) };
+        fill::<P, C, DEPTH>(out, quad, bounds, &TexturedSource::new(quad, lookup));
     } else {
-        fill::<P, C, DEPTH, false>(out, &[], quad, color_factors, bounds);
+        let lookup = |texel: usize| modulate(u32::from_le_bytes(*unsafe { source.get_unchecked(texel) }), color_factors);
+        fill::<P, C, DEPTH>(out, quad, bounds, &TexturedSource::new(quad, lookup));
     }
 }
 
-fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
+fn fill<P: Pass, C: Coverage, const DEPTH: bool>(
     out: &mut Target,
-    shaded: &[u32],
     quad: &ScreenQuad,
-    color_factors: [u32; 3],
     (min_x, min_y, max_x, max_y): (i32, i32, i32, i32),
+    source: &impl Source,
 ) {
     fn window(start: f32, step: f32, n: i32) -> (i32, i32) {
         if step == 0.0 {
@@ -263,18 +334,7 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
         ((enter as i32 - 1).max(0), (exit as i32 + 2).min(n))
     }
 
-    let tex = &*quad.sprite;
-    let source = tex.image.as_chunks::<4>().0;
     let [ds_dx, ds_dy, dt_dx, dt_dy] = quad.inverse;
-    let (tex_w, tex_h) = (tex.width as f32, tex.height as f32);
-    let (du_ds, dv_ds) = (quad.uv_gradient[0][0] as f64, quad.uv_gradient[0][1] as f64);
-    let (du_dt, dv_dt) = (quad.uv_gradient[1][0] as f64, quad.uv_gradient[1][1] as f64);
-    let (u_origin, v_origin) = (quad.uv_origin[0] as f64, quad.uv_origin[1] as f64);
-
-    let du_dx = ((du_ds * ds_dx as f64 + du_dt * dt_dx as f64) * tex_w as f64 * FIXED_ONE) as i64;
-    let dv_dx = ((dv_ds * ds_dx as f64 + dv_dt * dt_dx as f64) * tex_h as f64 * FIXED_ONE) as i64;
-    let (last_texel_x, last_texel_y) = (tex.width as i64 - 1, tex.height as i64 - 1);
-    let stride = tex.width as usize;
     let width = max_x - min_x;
 
     for y in min_y..max_y {
@@ -291,8 +351,7 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
         let delta_x = start as f32 + 0.5 - quad.origin[0];
         let mut s = ds_dx * delta_x + ds_dy * delta_y;
         let mut t = dt_dx * delta_x + dt_dy * delta_y;
-        let mut tex_u = ((u_origin + s as f64 * du_ds + t as f64 * du_dt) * tex_w as f64 * FIXED_ONE) as i64;
-        let mut tex_v = ((v_origin + s as f64 * dv_ds + t as f64 * dv_dt) * tex_h as f64 * FIXED_ONE) as i64;
+        let mut cursor = source.cursor(start, y, s, t);
         let row_offset = (y as u32 * out.width) as usize;
 
         for x in start..min_x + hi {
@@ -300,15 +359,7 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
                 let depth = quad.origin_depth + s * quad.depth_gradient[0] + t * quad.depth_gradient[1];
                 let pixel = row_offset + x as usize;
                 if !DEPTH || P::depth_passes(depth, out.depth[pixel]) {
-                    let texel_x = (tex_u >> 32).clamp(0, last_texel_x) as usize;
-                    let texel_y = (tex_v >> 32).clamp(0, last_texel_y) as usize;
-                    let texel = texel_y * stride + texel_x;
-                    let src = if SHADED {
-                        *unsafe { shaded.get_unchecked(texel) }
-                    } else {
-                        let raw = *unsafe { source.get_unchecked(texel) };
-                        modulate(u32::from_le_bytes(raw), color_factors)
-                    };
+                    let src = source.color(&cursor);
                     if P::keep(src) {
                         if DEPTH && P::WRITES_DEPTH {
                             out.depth[pixel] = depth;
@@ -319,13 +370,20 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool, const SHADED: bool>(
             }
             s += ds_dx;
             t += dt_dx;
-            tex_u += du_dx;
-            tex_v += dv_dx;
+            source.step(&mut cursor);
         }
     }
 }
 
 fn draw(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad, depth: bool) {
+    if let Shader::EndPortal(portal) = &quad.shader {
+        let bounds = bbox(quad, out.width, out.height);
+        let source = portal.as_source(out);
+        return match depth {
+            true => fill::<Opaque, Parallelogram, true>(out, quad, bounds, &source),
+            false => fill::<Opaque, Parallelogram, false>(out, quad, bounds, &source),
+        };
+    }
     macro_rules! with_pass {
         ($pass:ty) => {
             match (quad.kind, depth) {
@@ -358,7 +416,7 @@ pub fn render(out: &mut Target, quads: &mut [ScreenQuad], depth: bool) {
     quads.sort_by(|a, b| {
         rank(a).cmp(&rank(b)).then_with(|| match a.pass {
             PassKind::Translucent => far(b).total_cmp(&far(a)).then_with(|| near(a).total_cmp(&near(b))),
-            _ => side(a).cmp(&side(b)).then_with(|| near(a).total_cmp(&near(b)))
+            _ => side(a).cmp(&side(b)).then_with(|| near(a).total_cmp(&near(b))),
         })
     });
 

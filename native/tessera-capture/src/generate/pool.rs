@@ -268,7 +268,7 @@ impl Pools {
                     let (namespace, path) = id(&dupe[0]);
                     Err(GenerateError::Duplicate { kind, id: format!("{namespace}:{path}") })
                 }
-                None => Ok(())
+                None => Ok(()),
             }
         }
 

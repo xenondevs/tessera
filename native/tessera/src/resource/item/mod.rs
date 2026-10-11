@@ -1,13 +1,13 @@
 pub mod raw;
 pub mod cache;
 
-use std::borrow::Cow;
 use self::raw::{ConditionProperty, RangeProperty, SelectProperty};
 use super::ResourceId;
 use super::model::Model;
 use super::tint::TintSource;
 use crate::capture::lookup::Capture;
 use crate::scene::quad::Affine;
+use std::borrow::Cow;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -92,9 +92,9 @@ impl ItemModel {
             ItemModel::Special { base, local, capture } => out.push(Leaf::Special { base, local, capture: *capture }),
             ItemModel::Composite(children) => children.iter().for_each(|child| child.leaves(ctx, out)),
             ItemModel::Select { property, cases, fallback } => {
-                let case = ctx.select(property).and_then(|val| {
-                    cases.iter().find(|(when, _)| when.iter().any(|w| &**w == val))
-                });
+                let case = ctx
+                    .select(property)
+                    .and_then(|val| cases.iter().find(|(when, _)| when.iter().any(|w| &**w == val)));
                 pick(case.map(|(_, model)| model).or(fallback.as_deref()), ctx, out)
             }
             ItemModel::Condition { property, on_true, on_false } => {

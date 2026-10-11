@@ -19,13 +19,13 @@ pub struct RawItemFile {
     pub minecraft_version: String,
     pub item: String,
     pub materials: Vec<RawMaterial>,
-    pub default_leaf: RawLeaf
+    pub default_leaf: RawLeaf,
 }
 
 #[derive(Deserialize)]
 pub struct RawLeaf {
     pub capture: Option<Vec<RawSubmission>>,
-    pub discarded: Option<Vec<String>>
+    pub discarded: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]

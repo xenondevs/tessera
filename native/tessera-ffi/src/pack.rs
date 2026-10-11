@@ -1,4 +1,4 @@
-use crate::ffi::{guard, set_last_error, BoxFuture};
+use crate::ffi::{BoxFuture, guard, set_last_error};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
 use std::future::ready;
@@ -67,8 +67,8 @@ pub unsafe extern "C" fn tessera_create_zip_pack(
     // SAFETY: Java passes a live segment of len bytes. Arena::allocateFrom encodes UTF-8 so the
     // bytes are always valid UTF-8
     let path = unsafe { str::from_utf8_unchecked(slice::from_raw_parts(path_ptr, path_len)) };
-    let root = (!root_ptr.is_null())
-        .then(|| unsafe { str::from_utf8_unchecked(slice::from_raw_parts(root_ptr, root_len)) }.to_string());
+    let root =
+        (!root_ptr.is_null()).then(|| unsafe { str::from_utf8_unchecked(slice::from_raw_parts(root_ptr, root_len)) }.to_string());
     guard(ptr::null_mut(), || match ResourcePack::new_zip(path, root) {
         Ok(pack) => Box::into_raw(Box::new(pack)),
         Err(e) => {
@@ -79,10 +79,7 @@ pub unsafe extern "C" fn tessera_create_zip_pack(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn tessera_create_directory_pack(
-    path_ptr: *const u8,
-    path_len: usize,
-) -> *mut ResourcePack {
+pub unsafe extern "C" fn tessera_create_directory_pack(path_ptr: *const u8, path_len: usize) -> *mut ResourcePack {
     // SAFETY: Java passes a live segment of len bytes. Arena::allocateFrom encodes UTF-8 so the
     // bytes are always valid UTF-8
     let path = unsafe { str::from_utf8_unchecked(slice::from_raw_parts(path_ptr, path_len)) };
@@ -94,7 +91,6 @@ pub unsafe extern "C" fn tessera_create_directory_pack(
         }
     })
 }
-
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn tessera_create_jvm_pack(read: ReadFn, list: ListFn) -> *mut ResourcePack {

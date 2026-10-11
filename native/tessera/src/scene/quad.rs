@@ -1,4 +1,4 @@
-use super::rasterize::{PassKind, QuadKind, Side};
+use super::rasterize::{PassKind, QuadKind, Shader, Side};
 use crate::direction::Direction;
 use crate::direction::Quadrant;
 use crate::resource::blockstate::ModelState;
@@ -32,6 +32,7 @@ pub struct ScreenQuad {
     pub uv_origin: [f32; 2],
     pub uv_gradient: [[f32; 2]; 2],
     pub sprite: Arc<Sprite>,
+    pub shader: Shader,
     pub light_emission: u8,
     pub tint: u32,
     pub shade: f32,
@@ -42,6 +43,7 @@ pub struct ScreenQuad {
 
 pub(crate) struct Surface {
     pub sprite: Arc<Sprite>,
+    pub shader: Shader,
     pub light_emission: u8,
     pub tint: u32,
     pub shade: f32,
@@ -73,6 +75,7 @@ impl ScreenQuad {
                 [uv_u[0] - uv_origin[0], uv_u[1] - uv_origin[1]],
                 [uv_v[0] - uv_origin[0], uv_v[1] - uv_origin[1]],
             ],
+            shader: surface.shader,
             sprite: surface.sprite,
             light_emission: surface.light_emission,
             tint: surface.tint,
@@ -372,6 +375,7 @@ pub(crate) fn project(
             let surface = Surface {
                 pass: sprite.blend.into(),
                 sprite,
+                shader: Shader::Sprite,
                 light_emission: el.light_emission,
                 tint: usize::try_from(face.tint_index)
                     .ok()
