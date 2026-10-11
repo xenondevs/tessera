@@ -1,3 +1,4 @@
+use super::end_portal::EndPortal;
 use super::quad;
 use super::quad::{Affine, ScreenQuad, Surface, edge_det, normal_matrix, to_screen};
 use super::rasterize::{AlphaCutout, PassKind, QuadKind, Shader, Side};
@@ -7,7 +8,6 @@ use crate::direction::{Direction, Quadrant};
 use crate::resource::ResourceId;
 use crate::resource::cache::Caches;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
-use super::end_portal::EndPortal;
 use std::str::FromStr;
 use std::sync::Arc;
 use tessera_capture::model;

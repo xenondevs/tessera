@@ -6,16 +6,16 @@ public sealed interface RenderRequest {
     
     String id();
     
-    int size();
+    Output output();
     
-    record Item(String id, int size) implements RenderRequest {
+    record Item(String id, Output output) implements RenderRequest {
     }
     
-    record Model(String id, int size) implements RenderRequest {
+    record Model(String id, Output output) implements RenderRequest {
     }
     
-    record BlockState(String id, @Nullable String properties, int size,
-                      Framing framing) implements RenderRequest {
+    record BlockState(String id, @Nullable String properties, Framing framing,
+                      Output output) implements RenderRequest {
     }
     
     sealed interface Framing {
@@ -26,4 +26,17 @@ public sealed interface RenderRequest {
         }
     }
     
+    record Output(int size, Format format) {
+    }
+    
+    enum Format {
+        /**
+         * Raw pixels data, successful result is {@link RenderResult.Pixels}.
+         */
+        RGBA,
+        /**
+         * An encoded PNG, successful result is {@link RenderResult.Png}.
+         */
+        PNG
+    }
 }

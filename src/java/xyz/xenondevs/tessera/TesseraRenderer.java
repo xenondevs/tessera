@@ -34,16 +34,21 @@ public class TesseraRenderer implements AutoCloseable {
         JAVA_FLOAT.withName("margin"),
         JAVA_BYTE.withName("kind"),
         JAVA_BYTE.withName("framing"),
-        MemoryLayout.paddingLayout(6)
+        JAVA_BYTE.withName("encode"),
+        MemoryLayout.paddingLayout(5)
     );
     
     private static final long
         ID = requestOffset("id"), ID_LEN = requestOffset("idLen"), PROPS = requestOffset("props"), PROPS_LEN = requestOffset("propsLen"),
-        SIZE = requestOffset("size"), MARGIN = requestOffset("margin"), KIND = requestOffset("kind"), FRAMING = requestOffset("framing");
+        SIZE = requestOffset("size"), MARGIN = requestOffset("margin"), KIND = requestOffset("kind"), FRAMING = requestOffset("framing"),
+        ENCODE = requestOffset("encode");
     private static final byte KIND_ITEM = 0, KIND_MODEL = 1, KIND_BLOCK_STATE = 2;
     private static final byte FRAMING_GUI = 0, FRAMING_FIT = 1;
     
-    private static final FunctionDescriptor RESULT_DESCRIPTOR = FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS);
+    private static final FunctionDescriptor RESULT_DESCRIPTOR = FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS);
+    private static final StructLayout BOUNDS = MemoryLayout.structLayout(
+        JAVA_INT.withName("minX"), JAVA_INT.withName("maxX"), JAVA_INT.withName("minY"), JAVA_INT.withName("maxY")
+    );
     private static final MethodHandle ON_RESULT;
     
     static {
@@ -53,7 +58,7 @@ public class TesseraRenderer implements AutoCloseable {
                 "onResult",
                 MethodType.methodType(
                     int.class, long.class, MemorySegment.class,
-                    long.class, MemorySegment.class
+                    long.class, MemorySegment.class, MemorySegment.class
                 )
             );
         } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -105,7 +110,7 @@ public class TesseraRenderer implements AutoCloseable {
         if (requests.isEmpty())
             return List.of();
         
-        var batch = new Batch(requests.size());
+        var batch = new Batch(requests);
         int status;
         try (var arena = Arena.ofConfined()) {
             var array = arena.allocate(REQUEST, requests.size());
@@ -134,11 +139,15 @@ public class TesseraRenderer implements AutoCloseable {
         var id = arena.allocateFrom(request.id());
         el.set(ADDRESS, ID, id);
         el.set(JAVA_LONG, ID_LEN, id.byteSize() - 1); // appended \0
-        el.set(JAVA_INT, SIZE, request.size());
+        el.set(JAVA_INT, SIZE, request.output().size());
+        el.set(JAVA_BYTE, ENCODE, switch (request.output().format()) {
+            case RGBA -> (byte) 0;
+            case PNG -> (byte) 1;
+        });
         switch (request) {
             case RenderRequest.Item _ -> el.set(JAVA_BYTE, KIND, KIND_ITEM);
             case RenderRequest.Model _ -> el.set(JAVA_BYTE, KIND, KIND_MODEL);
-            case RenderRequest.BlockState(var _, var properties, var _, var framing) -> {
+            case RenderRequest.BlockState(var _, var properties, var framing, var _) -> {
                 if (properties != null) {
                     var props = arena.allocateFrom(properties);
                     el.set(ADDRESS, PROPS, props);
@@ -194,24 +203,42 @@ public class TesseraRenderer implements AutoCloseable {
     
     private static final class Batch {
         
+        final List<? extends RenderRequest> requests;
         final RenderResult[] results;
         @Nullable Throwable failure;
         
-        Batch(int count) {
-            results = new RenderResult[count];
+        Batch(List<? extends RenderRequest> requests) {
+            this.requests = requests;
+            results = new RenderResult[requests.size()];
         }
         
-        int onResult(long index, MemorySegment png, long pngLen, MemorySegment error) {
+        int onResult(long index, MemorySegment image, long imageLen, MemorySegment bounds, MemorySegment error) {
             try {
-                results[(int) index] = error.equals(MemorySegment.NULL)
-                    ? new RenderResult.Success(png.reinterpret(pngLen).toArray(JAVA_BYTE))
-                    : new RenderResult.Failure(error.reinterpret(Long.MAX_VALUE).getString(0));
+                if (!error.equals(MemorySegment.NULL)) {
+                    results[(int) index] = new RenderResult.Failure(error.reinterpret(Long.MAX_VALUE).getString(0));
+                    return 0;
+                }
+                
+                var output = requests.get((int) index).output();
+                var data = image.reinterpret(imageLen).toArray(JAVA_BYTE);
+                results[(int) index] = switch (output.format()) {
+                    case RGBA -> new RenderResult.Pixels(data, output.size(), readBounds(bounds));
+                    case PNG -> new RenderResult.Png(data, readBounds(bounds));
+                };
                 return 0;
             } catch (Throwable ex) {
                 // escaping an upcall would kill the JVM
                 failure = ex;
                 return 1;
             }
+        }
+        
+        private static RenderResult.@Nullable Bounds readBounds(MemorySegment bounds) {
+            if (bounds.equals(MemorySegment.NULL))
+                return null;
+            
+            var sides = bounds.reinterpret(BOUNDS.byteSize()).toArray(JAVA_INT);
+            return new RenderResult.Bounds(sides[0], sides[1], sides[2], sides[3]);
         }
         
     }

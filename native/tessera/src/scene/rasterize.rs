@@ -1,44 +1,39 @@
+use super::end_portal::EndPortal;
 use super::quad::ScreenQuad;
 use super::shade::fixed_factors;
 use crate::resource::texture::sprite::Blend;
-use super::end_portal::EndPortal;
 use image::RgbaImage;
 use std::sync::Arc;
 
 /// One texel in fixed-point 32.32 format
 const FIXED_ONE: f64 = (1u64 << 32) as f64;
 
-pub struct Target {
+pub struct Canvas<'a> {
     pub width: u32,
     pub height: u32,
-    pub color: Vec<u32>,
-    pub depth: Vec<f32>,
+    pub color: &'a mut [u32],
+    pub depth: &'a mut [f32],
 }
 
-impl Target {
-    pub fn new(width: u32, height: u32, depth: bool) -> Self {
-        Self {
-            width,
-            height,
-            color: vec![0; (width * height) as usize],
-            depth: if depth {
-                vec![f32::INFINITY; (width * height) as usize]
-            } else {
-                Vec::new()
-            },
+pub fn render_image(width: u32, height: u32, quads: &mut [ScreenQuad], depth: bool) -> RgbaImage {
+    let len = (width * height) as usize;
+    let mut depth_buffer = if depth { vec![f32::INFINITY; len] } else { Vec::new() };
+    let mut image = RgbaImage::new(width, height);
+
+    // SAFETY: u32 is obviously aligned for u8
+    let (before, color, after) = unsafe { image.align_to_mut::<u32>() };
+    if before.is_empty() && after.is_empty() {
+        render(&mut Canvas { width, height, color, depth: &mut depth_buffer }, quads, depth);
+    } else {
+        let mut pixels = vec![0u32; len];
+        let mut canvas = Canvas { width, height, color: &mut pixels, depth: &mut depth_buffer };
+        render(&mut canvas, quads, depth);
+        for (bytes, pixel) in image.as_chunks_mut::<4>().0.iter_mut().zip(&pixels) {
+            *bytes = pixel.to_ne_bytes();
         }
     }
 
-    pub fn clear(&mut self) {
-        self.color.fill(0);
-        self.depth.fill(f32::INFINITY);
-    }
-
-    pub fn into_image(self) -> RgbaImage {
-        // SAFETY: u32 is obviously aligned for u8
-        let bytes = unsafe { std::slice::from_raw_parts(self.color.as_ptr().cast::<u8>(), self.color.len() * 4) };
-        RgbaImage::from_raw(self.width, self.height, bytes.to_vec()).expect("buffer is width * height")
-    }
+    image
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -292,7 +287,7 @@ fn bbox(quad: &ScreenQuad, width: u32, height: u32) -> (i32, i32, i32, i32) {
     (min_x, min_y, max_x, max_y)
 }
 
-fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad) {
+fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Canvas, shaded: &mut Vec<u32>, quad: &ScreenQuad) {
     let bounds @ (min_x, min_y, max_x, max_y) = bbox(quad, out.width, out.height);
     if min_x >= max_x || min_y >= max_y {
         return;
@@ -316,7 +311,7 @@ fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Target, shaded: 
 }
 
 fn fill<P: Pass, C: Coverage, const DEPTH: bool>(
-    out: &mut Target,
+    out: &mut Canvas,
     quad: &ScreenQuad,
     (min_x, min_y, max_x, max_y): (i32, i32, i32, i32),
     source: &impl Source,
@@ -375,7 +370,7 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool>(
     }
 }
 
-fn draw(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad, depth: bool) {
+fn draw(out: &mut Canvas, shaded: &mut Vec<u32>, quad: &ScreenQuad, depth: bool) {
     if let Shader::EndPortal(portal) = &quad.shader {
         let bounds = bbox(quad, out.width, out.height);
         let source = portal.as_source(out);
@@ -404,7 +399,7 @@ fn draw(out: &mut Target, shaded: &mut Vec<u32>, quad: &ScreenQuad, depth: bool)
     }
 }
 
-pub fn render(out: &mut Target, quads: &mut [ScreenQuad], depth: bool) {
+pub fn render(out: &mut Canvas, quads: &mut [ScreenQuad], depth: bool) {
     let near = |quad: &ScreenQuad| quad.origin_depth + quad.depth_gradient[0].min(0.0) + quad.depth_gradient[1].min(0.0);
     let far = |q: &ScreenQuad| q.origin_depth + q.depth_gradient[0].max(0.0) + q.depth_gradient[1].max(0.0);
     let rank = |q: &ScreenQuad| match q.pass {

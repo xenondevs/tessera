@@ -7,8 +7,8 @@ pub mod blockstate;
 pub mod capture;
 mod end_portal;
 
+use self::quad::Affine;
 use self::quad::Rescale;
-use self::rasterize::Target;
 use crate::capture::lookup::{Capture, lookup_block};
 use crate::diagnostics::Diagnostics;
 use crate::direction::Quadrant;
@@ -21,7 +21,6 @@ use crate::resource::model::{DisplayContext, Geometry, GuiLight, Model, Transfor
 use crate::resource::texture::TextureSlot;
 use crate::resource::texture::sprite::{Sprite, missing_sprite};
 use crate::resource::tint::TintSource;
-use self::quad::Affine;
 use crate::util::FastHashMap;
 use image::RgbaImage;
 use std::str::FromStr;
@@ -219,9 +218,7 @@ impl Renderer {
             return Err(RenderError::NoGeometry(subject.clone()));
         }
         let depth = rasterize::needs_depth(leaves.len(), elements, &quads);
-        let mut target = Target::new(size, size, depth);
-        rasterize::render(&mut target, &mut quads, depth);
-        Ok(target.into_image())
+        Ok(rasterize::render_image(size, size, &mut quads, depth))
     }
 
     async fn model(
@@ -319,9 +316,7 @@ impl Renderer {
             return Err(RenderError::NoGeometry(subject.clone()));
         }
         let depth = rasterize::needs_depth(parts.len(), elements, &quads);
-        let mut target = Target::new(size, size, depth);
-        rasterize::render(&mut target, &mut quads, depth);
-        Ok(target.into_image())
+        Ok(rasterize::render_image(size, size, &mut quads, depth))
     }
 
     async fn sprites_for(&self, model: &Model, subject: &ResourceId) -> FastHashMap<String, Arc<Sprite>> {

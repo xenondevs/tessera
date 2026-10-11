@@ -7,7 +7,8 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false }
+png = "0.18"
 rayon = "1"
 tessera = { path = "../tessera" }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread"] }

@@ -1,7 +1,7 @@
+use crate::encode;
+use crate::encode::Bounds;
 use crate::ffi::guard;
 use crate::renderer::NativeRenderer;
-use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-use image::{ExtendedColorType, ImageEncoder};
 use std::ffi::{CString, c_char};
 use std::sync::Arc;
 use std::{panic, ptr, slice};
@@ -21,6 +21,7 @@ pub struct RenderRequest {
     margin: f32,
     kind: u8,
     framing: u8,
+    encode: u8,
 }
 
 const KIND_ITEM: u8 = 0;
@@ -39,10 +40,16 @@ enum Request {
     },
 }
 
-type ResultFn = unsafe extern "C" fn(index: usize, png: *const u8, png_len: usize, error: *const c_char) -> i32;
+struct OutputOptions {
+    size: u32,
+    encode: bool,
+}
+
+type ResultFn =
+    unsafe extern "C" fn(index: usize, image: *const u8, image_len: usize, bounds: *const Bounds, error: *const c_char) -> i32;
 
 impl RenderRequest {
-    unsafe fn decode(&self) -> Result<(Request, u32), String> {
+    unsafe fn decode(&self) -> Result<(Request, OutputOptions), String> {
         if self.size == 0 {
             return Err("Render size must be positive".to_string());
         }
@@ -50,6 +57,7 @@ impl RenderRequest {
         let id: ResourceId = unsafe { str::from_utf8_unchecked(slice::from_raw_parts(self.id, self.id_len)) }
             .parse()
             .map_err(|err| format!("{err}"))?;
+        let encode = self.encode != 0;
         let request = match self.kind {
             KIND_ITEM => Request::Item(id),
             KIND_MODEL => Request::Model(id),
@@ -70,7 +78,7 @@ impl RenderRequest {
             _ => return Err(format!("Invalid request kind: {}", self.kind)),
         };
 
-        Ok((request, self.size))
+        Ok((request, OutputOptions { size: self.size, encode }))
     }
 }
 
@@ -81,13 +89,16 @@ pub unsafe extern "C" fn tessera_render(
     count: usize,
     on_result: ResultFn,
 ) -> i32 {
-    fn deliver(on_result: ResultFn, index: usize, result: Result<Vec<u8>, String>) -> i32 {
+    fn deliver(on_result: ResultFn, index: usize, result: Result<(Vec<u8>, Option<Bounds>), String>) -> i32 {
         // SAFETY: stub lives in the jvm renderer arena which is valid during this run
         match result {
-            Ok(png) => unsafe { on_result(index, png.as_ptr(), png.len(), ptr::null()) },
+            Ok((img, bounds)) => {
+                let bounds = bounds.as_ref().map_or(ptr::null(), ptr::from_ref);
+                unsafe { on_result(index, img.as_ptr(), img.len(), bounds, ptr::null()) }
+            }
             Err(msg) => {
                 let msg = CString::new(msg.replace('\0', "\\0")).expect("\\0 was just replaced");
-                unsafe { on_result(index, ptr::null(), 0, msg.as_ptr()) }
+                unsafe { on_result(index, ptr::null(), 0, ptr::null(), msg.as_ptr()) }
             }
         }
     }
@@ -103,9 +114,11 @@ pub unsafe extern "C" fn tessera_render(
             for (index, req) in requests.iter().enumerate() {
                 // SAFETY: JVM passes strings encoded to utf-8 via Arena::allocateFrom
                 match unsafe { req.decode() } {
-                    Ok((req, size)) => {
+                    Ok((req, output_options)) => {
+                        let size = output_options.size;
                         let renderer = Arc::clone(&renderer.inner);
                         tasks.spawn(async move {
+                            let wants_encode = output_options.encode;
                             let image = match req {
                                 Request::Item(id) => renderer.render_item(&id, size).await,
                                 Request::Model(id) => renderer.render_model(&id, size).await,
@@ -114,15 +127,20 @@ pub unsafe extern "C" fn tessera_render(
                                 }
                             }
                             .map_err(|e| e.to_string());
-                            let png = image.and_then(|img| {
-                                let mut png = Vec::new();
-                                PngEncoder::new_with_quality(&mut png, CompressionType::Fast, FilterType::Adaptive)
-                                    .write_image(img.as_raw(), img.width(), img.height(), ExtendedColorType::Rgba8)
-                                    .map_err(|e| e.to_string())?;
-                                Ok(png)
-                            });
 
-                            (index, png)
+                            let image = match image {
+                                Ok(img) => img,
+                                Err(err) => return (index, Err(err)),
+                            };
+
+                            let (out, bounds) = if wants_encode {
+                                encode::encode(&image)
+                            } else {
+                                let bounds = encode::find_bounds(&image, None);
+                                (image.into_raw(), bounds)
+                            };
+
+                            (index, Ok((out, bounds)))
                         });
                     }
                     Err(msg) => {

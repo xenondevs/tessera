@@ -1,5 +1,5 @@
+use super::rasterize::{Canvas, Source};
 use crate::resource::texture::sprite::Sprite;
-use super::rasterize::{Source, Target};
 use std::sync::Arc;
 use ultraviolet::{Mat2, Vec2, Vec3};
 
@@ -68,7 +68,7 @@ impl EndPortal {
         u32::from_le_bytes([channel(r), channel(g), channel(b), 255])
     }
 
-    pub(super) fn as_source(&self, out: &Target) -> EndPortalSource<'_> {
+    pub(super) fn as_source(&self, out: &Canvas) -> EndPortalSource<'_> {
         EndPortalSource {
             portal: self,
             screen: out.width.max(out.height).next_power_of_two().max(512) as f32,
