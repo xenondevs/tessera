@@ -50,7 +50,7 @@ impl BlockStateCache {
                         }
                     }
                     if let Some(variants) = variants {
-                        for (_, variant) in variants.iter() {
+                        for variant in variants.values() {
                             Self::walk_variants(variant, &mut seen)
                         }
                     }
@@ -74,7 +74,7 @@ impl BlockStateCache {
 
         if util::is_multithreaded() {
             tokio::task::block_in_place(|| {
-                parsed.into_par_iter().for_each(|pair| build_state(pair));
+                parsed.into_par_iter().for_each(build_state);
             });
         } else {
             parsed.into_iter().for_each(build_state);
@@ -111,7 +111,7 @@ impl BlockStateCache {
                     let weighted = Self::resolve(models, apply, diag);
                     out.push((parse_properties(key.into_boxed_str()), weighted));
                 }
-                (!out.is_empty()).then(|| BlockStateModel::Variants(out))
+                (!out.is_empty()).then_some(BlockStateModel::Variants(out))
             }
             RawBlockState { multipart: Some(multipart), .. } => {
                 let mut out = Vec::with_capacity(multipart.len());
@@ -119,7 +119,7 @@ impl BlockStateCache {
                     let weighted = Self::resolve(models, part.apply, diag);
                     out.push((part.when, weighted));
                 }
-                (!out.is_empty()).then(|| BlockStateModel::Multipart(out))
+                (!out.is_empty()).then_some(BlockStateModel::Multipart(out))
             }
             _ => None,
         }

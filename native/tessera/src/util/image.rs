@@ -79,7 +79,12 @@ pub fn transform(
 
                 if flip_x {
                     // lets llvm vectorize
-                    for (o, i) in out_row.chunks_exact_mut(4).zip(src_row.chunks_exact(4).rev()) {
+                    for (o, i) in out_row
+                        .as_chunks_mut::<4>()
+                        .0
+                        .iter_mut()
+                        .zip(src_row.as_chunks::<4>().0.iter().rev())
+                    {
                         o.copy_from_slice(i);
                     }
                 } else {
@@ -90,7 +95,9 @@ pub fn transform(
         }
         // col -> row copies
         Quadrant::R90 | Quadrant::R270 => {
+
             #[rustfmt::skip]
+            #[allow(clippy::too_many_arguments)]
             fn transpose_block(
                 out_buf: &mut [u8], src_buf: &[u8], src_width: usize, w: &Window,
                 (x_base, x_step): (isize, isize), (y_base, y_step): (isize, isize),
@@ -197,7 +204,7 @@ pub fn region_rect(
 pub fn scale(src: &RgbaImage, width: u32, height: u32) -> Option<RgbaImage> {
     let (src_width, src_height) = src.dimensions();
     let replicate = || -> Option<RgbaImage> {
-        if src_width == 0 || src_height == 0 || width % src_width != 0 || height % src_height != 0 {
+        if src_width == 0 || src_height == 0 || !width.is_multiple_of(src_width) || !height.is_multiple_of(src_height) {
             return None;
         }
         let (fx, fy) = ((width / src_width) as usize, (height / src_height) as usize);
@@ -210,10 +217,8 @@ pub fn scale(src: &RgbaImage, width: u32, height: u32) -> Option<RgbaImage> {
         for y in 0..src_height as usize {
             for x in 0..src_width as usize {
                 let src_offset = (y * src_width as usize + x) * 4;
-                let Some(texel): Option<[u8; 4]> = src_buf[src_offset..src_offset + 4].try_into().ok() else {
-                    return None;
-                };
-                for cell in row[x * fx * 4..(x + 1) * fx * 4].chunks_exact_mut(4) {
+                let texel: [u8; 4] = src_buf[src_offset..src_offset + 4].try_into().ok()?;
+                for cell in row[x * fx * 4..(x + 1) * fx * 4].as_chunks_mut::<4>().0 {
                     cell.copy_from_slice(&texel);
                 }
             }

@@ -28,7 +28,7 @@ impl ItemCache {
     pub async fn prime(&self, rm: &ResourceManager, models: &ModelCache, ids: &[ResourceId], diag: &Diagnostics) {
         let paths: Vec<String> = ids.iter().map(ResourceId::item_path).collect();
         let bytes = rm.read_many(&paths).await;
-        let parsed = rayon_batch(ids.iter().cloned().zip(bytes.into_iter()).collect(), |(id, bytes)| {
+        let parsed = rayon_batch(ids.iter().cloned().zip(bytes).collect(), |(id, bytes)| {
             let bytes = bytes
                 .map(|b| b.into_owned())
                 .ok_or_else(|| ItemError::NotFound(id.clone()));
@@ -63,7 +63,7 @@ impl ItemCache {
 
         if util::is_multithreaded() {
             tokio::task::block_in_place(|| {
-                parsed.into_par_iter().for_each(|pair| build_item(pair));
+                parsed.into_par_iter().for_each(build_item);
             });
         } else {
             parsed.into_iter().for_each(build_item);

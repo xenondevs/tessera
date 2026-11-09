@@ -45,7 +45,7 @@ impl<'a, T> IntoIterator for &'a NonEmptyVec<T> {
     type IntoIter = <&'a Vec<T> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.0).into_iter()
+        self.0.iter()
     }
 }
 
@@ -89,7 +89,7 @@ impl<'a, K, V> IntoIterator for &'a NonEmptyMap<K, V> {
     type IntoIter = <&'a FastHashMap<K, V> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.0).into_iter()
+        self.0.iter()
     }
 }
 

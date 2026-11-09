@@ -164,7 +164,7 @@ impl SpriteIndex {
                         .warn_keyed(&subject, layer, || format!("invalid atlas: {err}")),
                 }
             }
-            index.sprites.extend(sprites.into_iter());
+            index.sprites.extend(sprites);
         }
 
         index

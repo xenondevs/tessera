@@ -309,6 +309,7 @@ fn uv_corners(face: &Face, lock: Option<Mat3>) -> [[f32; 2]; 4] {
     corners
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn project(
     elements: &[Element],
     textures: &FastHashMap<String, Arc<Sprite>>,

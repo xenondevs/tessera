@@ -181,7 +181,7 @@ impl ModelCache {
     pub async fn prime_textures(&self, rm: &ResourceManager, textures: &TextureCache) {
         let mut seen = FastHashSet::new();
         for model in self.unresolved.iter() {
-            for (_, slot) in model.textures.iter() {
+            for slot in model.textures.values() {
                 if let SlotContents::Value(texture) = slot {
                     seen.insert(texture.sprite.clone());
                 }

@@ -136,6 +136,7 @@ pub async fn materials(caches: &Caches, capture: Capture<'_>, tints: &[u32], sub
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn project(
     cap: Capture<'_>,
     materials: &[CapturedMaterial],

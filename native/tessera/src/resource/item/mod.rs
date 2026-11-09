@@ -45,7 +45,7 @@ pub enum ItemModel {
     Composite(Box<[ItemModel]>),
     Select {
         property: SelectProperty,
-        cases: Box<[(Box<[Box<str>]>, ItemModel)]>,
+        cases: Box<[SelectCase]>,
         fallback: Option<Box<ItemModel>>,
     },
     Condition {
@@ -54,6 +54,8 @@ pub enum ItemModel {
         on_false: Box<ItemModel>,
     },
 }
+
+type SelectCase = (Box<[Box<str>]>, ItemModel);
 
 pub enum Leaf<'a> {
     Model {
@@ -94,7 +96,7 @@ impl ItemModel {
             ItemModel::Select { property, cases, fallback } => {
                 let case = ctx
                     .select(property)
-                    .and_then(|val| cases.iter().find(|(when, _)| when.iter().any(|w| &**w == val)));
+                    .and_then(|val| cases.iter().find(|(when, _)| when.iter().any(|w| **w == val)));
                 pick(case.map(|(_, model)| model).or(fallback.as_deref()), ctx, out)
             }
             ItemModel::Condition { property, on_true, on_false } => {

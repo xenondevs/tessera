@@ -58,7 +58,7 @@ impl Renderer {
         let model = self
             .caches
             .models
-            .model(&self.caches.resources, id, &self.diagnostics())
+            .model(&self.caches.resources, id, self.diagnostics())
             .await;
         self.model(&model, &[], size, id).await
     }
@@ -110,7 +110,7 @@ impl Renderer {
             let mut layers = Vec::new();
             for (slots, tints) in flat {
                 let (resources, textures, grass) = (&self.caches.resources, &self.caches.textures, &self.caches.color_maps.grass);
-                layers.extend(layered::layers(resources, textures, slots, tints, grass, &self.diagnostics()).await);
+                layers.extend(layered::layers(resources, textures, slots, tints, grass, self.diagnostics()).await);
             }
             return layered::composite(&layers, size).ok_or_else(|| RenderError::NoGeometry(id.clone()));
         }
@@ -236,7 +236,7 @@ impl Renderer {
                 tints,
                 &self.caches.color_maps.grass,
                 size,
-                &self.diagnostics(),
+                self.diagnostics(),
             )
             .await
             .ok_or_else(|| RenderError::NoGeometry(subject.clone())),
@@ -376,6 +376,6 @@ impl Renderer {
     }
 
     pub fn diagnostics(&self) -> &Diagnostics {
-        &self.caches.diagnostics()
+        self.caches.diagnostics()
     }
 }
