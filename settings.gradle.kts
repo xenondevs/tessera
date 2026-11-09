@@ -16,6 +16,11 @@ dependencyResolutionManagement {
     }
 }
 
-include("capture:tessera-capture-common")
-include("capture:tessera-capture-fabric")
-include("capture:tessera-capture-forge")
+if (!providers.gradleProperty("publishOnly").isPresent) {
+    include("capture:tessera-capture-common")
+    include("capture:tessera-capture-fabric")
+    include("capture:tessera-capture-forge")
+}
+
+include("tessera-native")
+project(":tessera-native").projectDir = file("native")

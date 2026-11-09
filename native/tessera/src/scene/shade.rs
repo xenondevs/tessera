@@ -6,7 +6,7 @@ use ultraviolet::{Mat3, Vec3};
 
 /// Front on flat item Y-flipped light poses. Mojang renders any gui item through a model view that
 /// flips y for shading. These constants are calculated from Mojang's [Lighting](https://mcsrc.dev/2/26.2/com/mojang/blaze3d/platform/Lighting) class:
-/// ```
+/// ```text
 /// D0 = normalize( 0.2, 1.0, -0.7)
 /// D1 = normalize(-0.2, 1.0,  0.7)
 /// ```
@@ -15,7 +15,7 @@ use ultraviolet::{Mat3, Vec3};
 /// new = old * Math.invsqrt(Math.fma(x, x, Math.fma(y, y, z * z)));
 /// ```
 /// so
-/// ```
+/// ```text
 /// scalar = 1/sqrt(x^2 + y^2 + z^2)
 ///        = 1/sqrt(0.2^2 + 1.0^2 + 0.7^2)
 ///        = 1/sqrt(1.53)
@@ -25,7 +25,7 @@ use ultraviolet::{Mat3, Vec3};
 /// D1 ~ (-0.161690, 0.808452,  0.565916)
 /// ```
 /// Joml's axis rotation matrices:
-/// ```
+/// ```text
 /// Rx(θ) = |     1      0      0 |
 ///         |     0   cosθ  -sinθ |
 ///         |     0   sinθ   cosθ |
@@ -35,7 +35,7 @@ use ultraviolet::{Mat3, Vec3};
 ///         | -sinθ      0   cosθ |
 /// ```
 /// so for ITEMS_FLAT
-/// ```
+/// ```text
 /// flatPose = Ry(-π/8) · Rx(3π/4)
 ///
 /// ITEMS_FLAT[0] = flatPose * D0
@@ -53,7 +53,7 @@ pub const ITEMS_FLAT: [Vec3; 2] = [
 /// 3D Y-flipped light poses. Mojang renders any gui item through a model view that flips y. These
 /// constants are calculated from Mojang's [Lighting](https://mcsrc.dev/2/26.2/com/mojang/blaze3d/platform/Lighting) class:<br>
 /// Joml's axis rotation and scale matrices:
-/// ```
+/// ```text
 /// Rx(θ)    = |     1      0      0 |
 ///            |     0   cosθ  -sinθ |
 ///            |     0   sinθ   cosθ |

@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "xyz.xenondevs.tessera"
-version = "1.0-SNAPSHOT"
+version = providers.gradleProperty("tesseraVersion").get()
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 val jvmTarget = libs.findVersion("jvm").get().requiredVersion.toInt()
@@ -15,4 +15,9 @@ java {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(jvmTarget)
+}
+
+tasks.withType<AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
 }
