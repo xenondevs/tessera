@@ -8,6 +8,9 @@ use std::sync::Arc;
 /// One texel in fixed-point 32.32 format
 const FIXED_ONE: f64 = (1u64 << 32) as f64;
 
+/// The span loop only vectorizes where the texel fetch can become a vec gather
+const BRANCHLESS_SPANS: bool = cfg!(any(target_feature = "avx2", target_feature = "sve"));
+
 pub struct Canvas<'a> {
     pub width: u32,
     pub height: u32,
@@ -83,6 +86,8 @@ pub enum Shader {
 
 trait Pass {
     const WRITES_DEPTH: bool;
+    /// compose is cheap enough to run on every pixel of a span and select afterwards
+    const BRANCHLESS: bool;
     fn depth_passes(depth: f32, stored: f32) -> bool;
     fn keep(src: u32) -> bool;
     fn compose(src: u32, dst: u32) -> u32;
@@ -94,6 +99,7 @@ struct Translucent;
 
 impl Pass for Opaque {
     const WRITES_DEPTH: bool = true;
+    const BRANCHLESS: bool = true;
 
     #[inline(always)]
     fn depth_passes(depth: f32, stored: f32) -> bool {
@@ -113,6 +119,7 @@ impl Pass for Opaque {
 
 impl<const MIN: u32> Pass for Cutout<MIN> {
     const WRITES_DEPTH: bool = true;
+    const BRANCHLESS: bool = true;
 
     #[inline(always)]
     fn depth_passes(depth: f32, stored: f32) -> bool {
@@ -132,6 +139,7 @@ impl<const MIN: u32> Pass for Cutout<MIN> {
 
 impl Pass for Translucent {
     const WRITES_DEPTH: bool = false;
+    const BRANCHLESS: bool = false;
 
     // nearer-or-equal for stuff directly drawn on top of each other (e.g. a banner pattern)
     #[inline(always)]
@@ -302,11 +310,135 @@ fn rasterize<P: Pass, C: Coverage, const DEPTH: bool>(out: &mut Canvas, shaded: 
                 .iter()
                 .map(|texel| modulate(u32::from_le_bytes(*texel), color_factors)),
         );
-        let lookup = |texel: usize| *unsafe { shaded.get_unchecked(texel) };
-        fill::<P, C, DEPTH>(out, quad, bounds, &TexturedSource::new(quad, lookup));
+        if P::BRANCHLESS && BRANCHLESS_SPANS {
+            fill_branchless::<P, C, DEPTH, u32>(out, quad, bounds, shaded, |texel| texel);
+        } else {
+            let lookup = |texel: usize| *unsafe { shaded.get_unchecked(texel) };
+            fill::<P, C, DEPTH>(out, quad, bounds, &TexturedSource::new(quad, lookup));
+        }
+    } else if P::BRANCHLESS && BRANCHLESS_SPANS {
+        fill_branchless::<P, C, DEPTH, [u8; 4]>(out, quad, bounds, source, |texel| {
+            modulate(u32::from_le_bytes(texel), color_factors)
+        });
     } else {
         let lookup = |texel: usize| modulate(u32::from_le_bytes(*unsafe { source.get_unchecked(texel) }), color_factors);
         fill::<P, C, DEPTH>(out, quad, bounds, &TexturedSource::new(quad, lookup));
+    }
+}
+
+/// Per-row span window
+#[inline(always)]
+fn window(start: f32, step: f32, n: i32) -> (i32, i32) {
+    if step == 0.0 {
+        return if (0.0..=1.0).contains(&start) { (0, n) } else { (0, 0) };
+    }
+    let (cross_lo, cross_hi) = (-start / step, (1.0 - start) / step);
+    let (enter, exit) = if step > 0.0 {
+        (cross_lo, cross_hi)
+    } else {
+        (cross_hi, cross_lo)
+    };
+    ((enter as i32 - 1).max(0), (exit as i32 + 2).min(n))
+}
+
+struct Span {
+    s0: f32,
+    t0: f32,
+    ds: f32,
+    dt: f32,
+    depth0: f32,
+    depth_s: f32,
+    depth_t: f32,
+    cursor: [i64; 2],
+    per_x: [i64; 2],
+    last: [i64; 2],
+    stride: usize,
+}
+
+/// Branchless version to allow vectorization on modern cpus
+#[inline(always)]
+fn span<P: Pass, C: Coverage, const DEPTH: bool, T: Copy>(
+    colors: &mut [u32],
+    depths: &mut [f32],
+    texels: &[T],
+    shade: impl Fn(T) -> u32,
+    span: &Span,
+) {
+    let mut cursor = span.cursor;
+    let mut texel = |i: usize| {
+        let (s, t) = (span.s0 + i as i32 as f32 * span.ds, span.t0 + i as i32 as f32 * span.dt);
+        let x = (cursor[0] >> 32).clamp(0, span.last[0]) as usize;
+        let y = (cursor[1] >> 32).clamp(0, span.last[1]) as usize;
+        // SAFETY: clamped to the sprite's last texel, and texels holds the whole sprite
+        let src = shade(*unsafe { texels.get_unchecked(y * span.stride + x) });
+        cursor[0] += span.per_x[0];
+        cursor[1] += span.per_x[1];
+        (s, t, src)
+    };
+    if DEPTH {
+        let len = colors.len().min(depths.len());
+        let (colors, depths) = (&mut colors[..len], &mut depths[..len]);
+        for i in 0..len {
+            let (s, t, src) = texel(i);
+            let depth = span.depth0 + s * span.depth_s + t * span.depth_t;
+            let stored = depths[i];
+            let write = C::inside(s, t) & P::keep(src) & P::depth_passes(depth, stored);
+            if P::WRITES_DEPTH {
+                depths[i] = if write { depth } else { stored };
+            }
+            colors[i] = if write { P::compose(src, colors[i]) } else { colors[i] };
+        }
+    } else {
+        for (i, color) in colors.iter_mut().enumerate() {
+            let (s, t, src) = texel(i);
+            let write = C::inside(s, t) & P::keep(src);
+            *color = if write { P::compose(src, *color) } else { *color };
+        }
+    }
+}
+
+fn fill_branchless<P: Pass, C: Coverage, const DEPTH: bool, T: Copy>(
+    out: &mut Canvas,
+    quad: &ScreenQuad,
+    (min_x, min_y, max_x, max_y): (i32, i32, i32, i32),
+    texels: &[T],
+    shade: impl Fn(T) -> u32 + Copy,
+) {
+    let source = TexturedSource::new(quad, |_: usize| 0);
+    let [ds_dx, ds_dy, dt_dx, dt_dy] = quad.inverse;
+    let width = max_x - min_x;
+
+    for y in min_y..max_y {
+        let delta_y = y as f32 + 0.5 - quad.origin[1];
+        let base_x = min_x as f32 + 0.5 - quad.origin[0];
+        let (s_lo, s_hi) = window(ds_dx * base_x + ds_dy * delta_y, ds_dx, width);
+        let (t_lo, t_hi) = window(dt_dx * base_x + dt_dy * delta_y, dt_dx, width);
+        let (lo, hi) = (s_lo.max(t_lo), s_hi.min(t_hi));
+        if lo >= hi {
+            continue;
+        }
+
+        let start = min_x + lo;
+        let delta_x = start as f32 + 0.5 - quad.origin[0];
+        let s0 = ds_dx * delta_x + ds_dy * delta_y;
+        let t0 = dt_dx * delta_x + dt_dy * delta_y;
+        let row = (y as u32 * out.width) as usize + start as usize;
+        let len = (hi - lo) as usize;
+        let geometry = Span {
+            s0,
+            t0,
+            ds: ds_dx,
+            dt: dt_dx,
+            depth0: quad.origin_depth,
+            depth_s: quad.depth_gradient[0],
+            depth_t: quad.depth_gradient[1],
+            cursor: source.cursor(start, y, s0, t0),
+            per_x: source.per_x,
+            last: source.last,
+            stride: source.stride,
+        };
+        let depths: &mut [f32] = if DEPTH { &mut out.depth[row..row + len] } else { &mut [] };
+        span::<P, C, DEPTH, T>(&mut out.color[row..row + len], depths, texels, shade, &geometry);
     }
 }
 
@@ -344,12 +476,15 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool>(
 
         let start = min_x + lo;
         let delta_x = start as f32 + 0.5 - quad.origin[0];
-        let mut s = ds_dx * delta_x + ds_dy * delta_y;
-        let mut t = dt_dx * delta_x + dt_dy * delta_y;
-        let mut cursor = source.cursor(start, y, s, t);
+        let s0 = ds_dx * delta_x + ds_dy * delta_y;
+        let t0 = dt_dx * delta_x + dt_dy * delta_y;
+        let mut cursor = source.cursor(start, y, s0, t0);
         let row_offset = (y as u32 * out.width) as usize;
 
+        let mut i = 0.0f32;
         for x in start..min_x + hi {
+            let (s, t) = (s0 + i * ds_dx, t0 + i * dt_dx);
+            i += 1.0;
             if C::inside(s, t) {
                 let depth = quad.origin_depth + s * quad.depth_gradient[0] + t * quad.depth_gradient[1];
                 let pixel = row_offset + x as usize;
@@ -363,8 +498,6 @@ fn fill<P: Pass, C: Coverage, const DEPTH: bool>(
                     }
                 }
             }
-            s += ds_dx;
-            t += dt_dx;
             source.step(&mut cursor);
         }
     }
