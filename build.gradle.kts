@@ -47,7 +47,6 @@ java {
 
 dependencies {
     compileOnlyApi("org.jspecify:jspecify:1.0.0")
-    implementation("com.google.jimfs:jimfs:1.3.0")
 }
 
 publishing {

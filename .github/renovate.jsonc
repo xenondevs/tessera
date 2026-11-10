@@ -1,0 +1,21 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "timezone": "Europe/Berlin",
+    // mondays
+    //"schedule": "* * * * 1",
+    "enabledManagers": ["github-actions", "cargo", "gradle"],
+    "minimumReleaseAge": "7 days",
+    "internalChecksFilter": "strict",
+    "packageRules": [
+        { "groupName": "github actions", "matchManagers": ["github-actions"] },
+        { "groupName": "rust", "matchManagers": ["cargo"], "matchUpdateTypes": ["minor", "patch"] },
+        { "matchManagers": ["gradle"], "skipArtifactsUpdate": true },
+        {
+            // one branch per minecraft port
+            "groupName": "minecraft",
+            "matchPackageNames": ["/^net\\.fabricmc/", "/^net\\.neoforged/", "/^org\\.jetbrains\\.kotlin/"],
+            "minimumReleaseAge": null
+        },
+        { "matchPackageNames": ["com.mojang:minecraft"], "enabled": false }
+    ]
+}
