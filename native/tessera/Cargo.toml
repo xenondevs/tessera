@@ -14,7 +14,7 @@ rawzip = "0.5"
 rayon = "1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
-simd-json = "0.18"
+simd-json = "0.19"
 tessera-capture = { path = "../tessera-capture" }
 tessera-derive = { path = "../tessera-derive" }
 thiserror = "2"
