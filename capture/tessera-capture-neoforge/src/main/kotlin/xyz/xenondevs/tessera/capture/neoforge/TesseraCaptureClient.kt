@@ -1,4 +1,4 @@
-package xyz.xenondevs.tessera.capture.forge
+package xyz.xenondevs.tessera.capture.neoforge
 
 import ModConstants
 import net.minecraft.client.Minecraft
@@ -15,7 +15,7 @@ class TesseraCaptureClient {
     
     init {
         NeoForge.EVENT_BUS.addListener<RegisterClientCommandsEvent> {
-            CaptureCommand.register(it.dispatcher, it.buildContext, ForgeClientFeedback)
+            CaptureCommand.register(it.dispatcher, it.buildContext, NeoforgeClientFeedback)
         }
         NeoForge.EVENT_BUS.addListener<ClientPlayerNetworkEvent.LoggingOut> {
             Minecraft.getInstance().execute(Capturer::reset)

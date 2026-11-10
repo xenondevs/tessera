@@ -2,8 +2,12 @@ name: ci
 
 on:
   pull_request:
+    paths: &native
+      - 'native/**'
+      - '.github/workflows/ci.yml'
   push:
     branches: [master]
+    paths: *native
 
 permissions:
   contents: read

@@ -1,0 +1,37 @@
+name: ci-capture
+
+on:
+  pull_request:
+    paths: &capture
+      - 'capture/**'
+      - 'buildSrc/**'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'settings.gradle.kts'
+      - '.github/workflows/ci-capture.yml'
+  push:
+    branches: [master]
+    paths: *capture
+
+permissions:
+  contents: read
+
+jobs:
+  mods:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v6.2.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6.4.1
+        with:
+          validate-wrappers: true
+
+      - name: Build
+        run: ./gradlew :capture:tessera-capture-fabric:jar :capture:tessera-capture-neoforge:jar

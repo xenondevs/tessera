@@ -11,6 +11,7 @@ permissions: {}
 jobs:
   # Built inside manylinux_2_28 to link against older glibc for older platforms
   build-linux:
+    if: ${{ !startsWith(github.ref_name, 'capture-') }}
     strategy:
       fail-fast: true
       matrix:
@@ -65,6 +66,7 @@ jobs:
           if-no-files-found: error
 
   build:
+    if: ${{ !startsWith(github.ref_name, 'capture-') }}
     strategy:
       fail-fast: true
       matrix:

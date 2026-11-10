@@ -19,7 +19,7 @@ dependencyResolutionManagement {
 if (!providers.gradleProperty("publishOnly").isPresent) {
     include("capture:tessera-capture-common")
     include("capture:tessera-capture-fabric")
-    include("capture:tessera-capture-forge")
+    include("capture:tessera-capture-neoforge")
 }
 
 include("tessera-native")

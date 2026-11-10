@@ -1,11 +1,11 @@
-package xyz.xenondevs.tessera.capture.forge
+package xyz.xenondevs.tessera.capture.neoforge
 
 import net.kyori.adventure.text.Component
 import net.minecraft.commands.CommandSourceStack
 import xyz.xenondevs.tessera.capture.util.CommandFeedback
 import xyz.xenondevs.tessera.capture.util.toVanilla
 
-object ForgeClientFeedback : CommandFeedback<CommandSourceStack> {
+object NeoforgeClientFeedback : CommandFeedback<CommandSourceStack> {
     override fun info(source: CommandSourceStack, message: Component) {
         source.sendSystemMessage(message.toVanilla())
     }

@@ -1,5 +1,5 @@
 plugins {
-    id("tessera.kotlin-conventions")
+    id("tessera.capture-conventions")
     alias(libs.plugins.loom)
 }
 

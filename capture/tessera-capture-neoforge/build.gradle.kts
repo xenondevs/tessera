@@ -1,10 +1,10 @@
 plugins {
-    id("tessera.kotlin-conventions")
+    id("tessera.capture-conventions")
     id("tessera.bundle-conventions")
     alias(libs.plugins.mod.dev)
 }
 
-val modId = project.name.replace('-', '_')
+val modId = "tessera_capture"
 
 neoForge {
     version = libs.versions.neoforge.asProvider().get()
