@@ -109,7 +109,7 @@ jobs:
 
   manifest:
     needs: [build-linux, build]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -141,7 +141,7 @@ jobs:
 
   jar:
     needs: manifest
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -184,7 +184,7 @@ jobs:
 
   sign:
     needs: jar
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       id-token: write
       attestations: write
@@ -224,7 +224,7 @@ jobs:
 
   maven:
     needs: sign
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -265,7 +265,7 @@ jobs:
 
   github-release:
     needs: sign
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
