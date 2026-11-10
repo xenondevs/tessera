@@ -1,6 +1,5 @@
 package xyz.xenondevs.tessera;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
@@ -14,8 +13,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 public class TesseraNative {
     
     static final Linker LINKER = Linker.nativeLinker();
-    // TODO - library per arch(features) distribution, downloading and loading
-    private static final SymbolLookup LIB = SymbolLookup.libraryLookup("tessera_ffi", Arena.global());
+    private static final SymbolLookup LIB = load();
     
     static final MethodHandle LAST_ERROR = downcall("tessera_last_error", FunctionDescriptor.of(ADDRESS));
     
@@ -30,6 +28,14 @@ public class TesseraNative {
     static final MethodHandle DESTROY_RENDERER = downcall("tessera_destroy_renderer", FunctionDescriptor.ofVoid(ADDRESS));
     
     static final MethodHandle RENDER = downcall("tessera_render", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS));
+    
+    private static SymbolLookup load() {
+        try {
+            return NativeLibrary.load();
+        } catch (Throwable ex) {
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
     
     private static MethodHandle downcall(String name, FunctionDescriptor desc) {
         return LINKER.downcallHandle(LIB.find(name).orElseThrow(), desc);
