@@ -124,9 +124,10 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - uses: hustcer/setup-nu@v3.29
+      - uses: xenondevs/actions/setup-nu@v1
         with:
-          version: '0.116.1'
+          version: 0.116.1
+          sha256: d6d8ace4be491ed8abba4026e73b60c0470b4671d7039307e7d772282ef863da
 
       - name: Manifest
         shell: bash

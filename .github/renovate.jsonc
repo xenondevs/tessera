@@ -3,19 +3,22 @@
     "timezone": "Europe/Berlin",
     // mondays
     //"schedule": "* * * * 1",
-    "enabledManagers": ["github-actions", "cargo", "gradle"],
+    "enabledManagers": ["github-actions", "cargo", "gradle", "gradle-wrapper"],
     "minimumReleaseAge": "7 days",
     "internalChecksFilter": "strict",
+    "prHourlyLimit": 0,
     "packageRules": [
         { "groupName": "github actions", "matchManagers": ["github-actions"] },
         { "groupName": "rust", "matchManagers": ["cargo"], "matchUpdateTypes": ["minor", "patch"] },
-        { "matchManagers": ["gradle"], "skipArtifactsUpdate": true },
+        { "groupName": "gradle", "matchManagers": ["gradle", "gradle-wrapper"], "skipArtifactsUpdate": true },
         {
             // one branch per minecraft port
             "groupName": "minecraft",
             "matchPackageNames": ["/^net\\.fabricmc/", "/^net\\.neoforged/", "/^org\\.jetbrains\\.kotlin/"],
             "minimumReleaseAge": null
         },
-        { "matchPackageNames": ["com.mojang:minecraft"], "enabled": false }
+        { "matchPackageNames": ["/^net\\.fabricmc/"], "registryUrls": ["https://maven.fabricmc.net/"] },
+        // file:size is a misparse of listOf("file", "size", "sha256") in build.gradle.kts
+        { "matchPackageNames": ["com.mojang:minecraft", "file:size"], "enabled": false }
     ]
 }
