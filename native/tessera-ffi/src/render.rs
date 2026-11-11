@@ -6,7 +6,7 @@ use std::ffi::{CString, c_char};
 use std::sync::Arc;
 use std::{panic, ptr, slice};
 use tessera::resource::ResourceId;
-use tessera::scene::{Framing, RenderError};
+use tessera::scene::{FlatResolution, Framing, RenderError};
 use tokio::task::JoinSet;
 
 #[repr(C)]
@@ -22,6 +22,8 @@ pub struct RenderRequest {
     kind: u8,
     framing: u8,
     encode: u8,
+    /// Only read for items
+    flat: u8,
 }
 
 const KIND_ITEM: u8 = 0;
@@ -29,19 +31,18 @@ const KIND_MODEL: u8 = 1;
 const KIND_BLOCK_STATE: u8 = 2;
 const FRAMING_GUI: u8 = 0;
 const FRAMING_FIT: u8 = 1;
+const FLAT_REQUESTED: u8 = 0;
+const FLAT_NATIVE: u8 = 1;
 
 enum Request {
-    Item(ResourceId),
+    Item { id: ResourceId, flat: FlatResolution },
     Model(ResourceId),
-    BlockState {
-        id: ResourceId,
-        props: String,
-        framing: Framing,
-    },
+    BlockState { id: ResourceId, props: String },
 }
 
 struct OutputOptions {
     size: u32,
+    framing: Framing,
     encode: bool,
 }
 
@@ -56,6 +57,8 @@ type ResultFn = unsafe extern "C" fn(
     status: i32,
     image: *const u8,
     image_len: usize,
+    width: u32,
+    height: u32,
     bounds: *const Bounds,
     error: *const c_char,
 ) -> i32;
@@ -92,8 +95,20 @@ impl RenderRequest {
             .parse()
             .map_err(|err| format!("{err}"))?;
         let encode = self.encode != 0;
+        let framing = match self.framing {
+            FRAMING_GUI => Framing::Gui,
+            FRAMING_FIT => Framing::Fit { margin: self.margin },
+            _ => return Err(format!("Invalid framing value: {}", self.framing)),
+        };
         let request = match self.kind {
-            KIND_ITEM => Request::Item(id),
+            KIND_ITEM => {
+                let flat = match self.flat {
+                    FLAT_REQUESTED => FlatResolution::Requested,
+                    FLAT_NATIVE => FlatResolution::Native,
+                    _ => return Err(format!("Invalid flat resolution value: {}", self.flat)),
+                };
+                Request::Item { id, flat }
+            }
             KIND_MODEL => Request::Model(id),
             KIND_BLOCK_STATE => {
                 let props = if self.props.is_null() {
@@ -102,17 +117,12 @@ impl RenderRequest {
                     // SAFETY: JVM passes a live segment of len bytes. Arena::allocateFrom encodes to utf-8
                     unsafe { str::from_utf8_unchecked(slice::from_raw_parts(self.props, self.props_len)) }.to_string()
                 };
-                let framing = match self.framing {
-                    FRAMING_GUI => Framing::Gui,
-                    FRAMING_FIT => Framing::Fit { margin: self.margin },
-                    _ => return Err(format!("Invalid framing value: {}", self.framing)),
-                };
-                Request::BlockState { id, props, framing }
+                Request::BlockState { id, props }
             }
             _ => return Err(format!("Invalid request kind: {}", self.kind)),
         };
 
-        Ok((request, OutputOptions { size: self.size, encode }))
+        Ok((request, OutputOptions { size: self.size, framing, encode }))
     }
 }
 
@@ -123,19 +133,37 @@ pub unsafe extern "C" fn tessera_render(
     count: usize,
     on_result: ResultFn,
 ) -> i32 {
-    fn deliver(on_result: ResultFn, index: usize, result: Result<(Vec<u8>, Option<Bounds>), Failure>) -> i32 {
+    struct Rendered {
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
+        bounds: Option<Bounds>,
+    }
+
+    fn deliver(on_result: ResultFn, index: usize, result: Result<Rendered, Failure>) -> i32 {
         // SAFETY: stub lives in the jvm renderer arena which is valid during this run
         match result {
-            Ok((img, bounds)) => {
+            Ok(Rendered { data, width, height, bounds }) => {
                 let bounds = bounds.as_ref().map_or(ptr::null(), ptr::from_ref);
-                unsafe { on_result(index, STATUS_OK, img.as_ptr(), img.len(), bounds, ptr::null()) }
+                unsafe {
+                    on_result(
+                        index,
+                        STATUS_OK,
+                        data.as_ptr(),
+                        data.len(),
+                        width,
+                        height,
+                        bounds,
+                        ptr::null(),
+                    )
+                }
             }
             Err(Failure { status: STATUS_EMPTY, .. }) => unsafe {
-                on_result(index, STATUS_EMPTY, ptr::null(), 0, ptr::null(), ptr::null())
+                on_result(index, STATUS_EMPTY, ptr::null(), 0, 0, 0, ptr::null(), ptr::null())
             },
             Err(Failure { status, message }) => {
                 let msg = CString::new(message.replace('\0', "\\0")).expect("\\0 was just replaced");
-                unsafe { on_result(index, status, ptr::null(), 0, ptr::null(), msg.as_ptr()) }
+                unsafe { on_result(index, status, ptr::null(), 0, 0, 0, ptr::null(), msg.as_ptr()) }
             }
         }
     }
@@ -152,16 +180,13 @@ pub unsafe extern "C" fn tessera_render(
                 // SAFETY: JVM passes strings encoded to utf-8 via Arena::allocateFrom
                 match unsafe { req.decode() } {
                     Ok((req, output_options)) => {
-                        let size = output_options.size;
+                        let OutputOptions { size, framing, encode: wants_encode } = output_options;
                         let renderer = Arc::clone(&renderer.inner);
                         tasks.spawn(async move {
-                            let wants_encode = output_options.encode;
                             let image = match req {
-                                Request::Item(id) => renderer.render_item(&id, size).await,
-                                Request::Model(id) => renderer.render_model(&id, size).await,
-                                Request::BlockState { id, props, framing } => {
-                                    renderer.render_blockstate(&id, &props, size, framing).await
-                                }
+                                Request::Item { id, flat } => renderer.render_item(&id, size, framing, flat).await,
+                                Request::Model(id) => renderer.render_model(&id, size, framing).await,
+                                Request::BlockState { id, props } => renderer.render_blockstate(&id, &props, size, framing).await,
                             };
 
                             let image = match image {
@@ -169,14 +194,15 @@ pub unsafe extern "C" fn tessera_render(
                                 Err(err) => return (index, Err(Failure::from(err))),
                             };
 
-                            let (out, bounds) = if wants_encode {
+                            let (width, height) = image.dimensions();
+                            let (data, bounds) = if wants_encode {
                                 encode::encode(&image)
                             } else {
                                 let bounds = encode::find_bounds(&image, None);
                                 (image.into_raw(), bounds)
                             };
 
-                            (index, Ok((out, bounds)))
+                            (index, Ok(Rendered { data, width, height, bounds }))
                         });
                     }
                     Err(msg) => {

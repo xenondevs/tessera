@@ -35,19 +35,23 @@ public class TesseraRenderer implements AutoCloseable {
         JAVA_BYTE.withName("kind"),
         JAVA_BYTE.withName("framing"),
         JAVA_BYTE.withName("encode"),
-        MemoryLayout.paddingLayout(5)
+        JAVA_BYTE.withName("flat"),
+        MemoryLayout.paddingLayout(4)
     );
     
     private static final long
         ID = requestOffset("id"), ID_LEN = requestOffset("idLen"), PROPS = requestOffset("props"), PROPS_LEN = requestOffset("propsLen"),
         SIZE = requestOffset("size"), MARGIN = requestOffset("margin"), KIND = requestOffset("kind"), FRAMING = requestOffset("framing"),
-        ENCODE = requestOffset("encode");
+        ENCODE = requestOffset("encode"), FLAT = requestOffset("flat");
     private static final byte KIND_ITEM = 0, KIND_MODEL = 1, KIND_BLOCK_STATE = 2;
     private static final byte FRAMING_GUI = 0, FRAMING_FIT = 1;
+    private static final byte FLAT_REQUESTED = 0, FLAT_NATIVE = 1;
     
     private static final int STATUS_OK = 0, STATUS_EMPTY = 1, STATUS_INVALID_REQUEST = 2, STATUS_NO_VARIANT = 3, STATUS_NOT_PRIMED = 4;
     
-    private static final FunctionDescriptor RESULT_DESCRIPTOR = FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor RESULT_DESCRIPTOR = FunctionDescriptor.of(
+        JAVA_INT, JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT, JAVA_INT, ADDRESS, ADDRESS
+    );
     private static final StructLayout BOUNDS = MemoryLayout.structLayout(
         JAVA_INT.withName("minX"), JAVA_INT.withName("maxX"), JAVA_INT.withName("minY"), JAVA_INT.withName("maxY")
     );
@@ -60,7 +64,7 @@ public class TesseraRenderer implements AutoCloseable {
                 "onResult",
                 MethodType.methodType(
                     int.class, long.class, int.class, MemorySegment.class,
-                    long.class, MemorySegment.class, MemorySegment.class
+                    long.class, int.class, int.class, MemorySegment.class, MemorySegment.class
                 )
             );
         } catch (NoSuchMethodException | IllegalAccessException ex) {
@@ -139,27 +143,34 @@ public class TesseraRenderer implements AutoCloseable {
         var id = arena.allocateFrom(request.id());
         el.set(ADDRESS, ID, id);
         el.set(JAVA_LONG, ID_LEN, id.byteSize() - 1); // appended \0
-        el.set(JAVA_INT, SIZE, request.output().size());
-        el.set(JAVA_BYTE, ENCODE, switch (request.output().format()) {
+        el.set(JAVA_INT, SIZE, request.size());
+        el.set(JAVA_BYTE, ENCODE, switch (request.format()) {
             case RGBA -> (byte) 0;
             case PNG -> (byte) 1;
         });
+        switch (request.framing()) {
+            case RenderRequest.Framing.Gui() -> el.set(JAVA_BYTE, FRAMING, FRAMING_GUI);
+            case RenderRequest.Framing.Fit(var margin) -> {
+                el.set(JAVA_BYTE, FRAMING, FRAMING_FIT);
+                el.set(JAVA_FLOAT, MARGIN, margin);
+            }
+        }
         switch (request) {
-            case RenderRequest.Item _ -> el.set(JAVA_BYTE, KIND, KIND_ITEM);
+            case RenderRequest.Item item -> {
+                el.set(JAVA_BYTE, KIND, KIND_ITEM);
+                el.set(JAVA_BYTE, FLAT, switch (item.flatResolution()) {
+                    case REQUESTED -> FLAT_REQUESTED;
+                    case NATIVE -> FLAT_NATIVE;
+                });
+            }
             case RenderRequest.Model _ -> el.set(JAVA_BYTE, KIND, KIND_MODEL);
-            case RenderRequest.BlockState(var _, var properties, var framing, var _) -> {
+            case RenderRequest.BlockState blockState -> {
+                el.set(JAVA_BYTE, KIND, KIND_BLOCK_STATE);
+                var properties = blockState.properties();
                 if (properties != null) {
                     var props = arena.allocateFrom(properties);
                     el.set(ADDRESS, PROPS, props);
                     el.set(JAVA_LONG, PROPS_LEN, props.byteSize() - 1);
-                }
-                el.set(JAVA_BYTE, KIND, KIND_BLOCK_STATE);
-                switch (framing) {
-                    case RenderRequest.Framing.Gui() -> el.set(JAVA_BYTE, FRAMING, FRAMING_GUI);
-                    case RenderRequest.Framing.Fit(var margin) -> {
-                        el.set(JAVA_BYTE, FRAMING, FRAMING_FIT);
-                        el.set(JAVA_FLOAT, MARGIN, margin);
-                    }
                 }
             }
         }
@@ -212,7 +223,10 @@ public class TesseraRenderer implements AutoCloseable {
             results = new RenderResult[requests.size()];
         }
         
-        int onResult(long index, int status, MemorySegment image, long imageLen, MemorySegment bounds, MemorySegment error) {
+        int onResult(
+            long index, int status, MemorySegment image, long imageLen,
+            int width, int height, MemorySegment bounds, MemorySegment error
+        ) {
             try {
                 switch (status) {
                     case STATUS_EMPTY -> {
@@ -220,10 +234,9 @@ public class TesseraRenderer implements AutoCloseable {
                         return 0;
                     }
                     case STATUS_OK -> {
-                        var output = requests.get((int) index).output();
                         var data = image.reinterpret(imageLen).toArray(JAVA_BYTE);
-                        results[(int) index] = switch (output.format()) {
-                            case RGBA -> new RenderResult.Pixels(data, output.size(), readBounds(bounds));
+                        results[(int) index] = switch (requests.get((int) index).format()) {
+                            case RGBA -> new RenderResult.Pixels(data, width, height, readBounds(bounds));
                             case PNG -> new RenderResult.Png(data, readBounds(bounds));
                         };
                         return 0;

@@ -9,6 +9,7 @@ mod end_portal;
 
 use self::quad::Affine;
 use self::quad::Rescale;
+use self::quad::ScreenQuad;
 use crate::capture::lookup::{Capture, lookup_block};
 use crate::diagnostics::Diagnostics;
 use crate::direction::Quadrant;
@@ -40,9 +41,19 @@ pub enum RenderError {
     NotPrimed(ResourceId),
 }
 
+#[derive(Copy, Clone)]
 pub enum Framing {
     Gui,
     Fit { margin: f32 },
+}
+
+/// Output res of 2d texture items
+#[derive(Copy, Clone)]
+pub enum FlatResolution {
+    /// Scaled to requested size
+    Requested,
+    /// Left at res of largest layer
+    Native,
 }
 
 pub struct Renderer {
@@ -54,13 +65,13 @@ impl Renderer {
         Self { caches }
     }
 
-    pub async fn render_model(&self, id: &ResourceId, size: u32) -> Result<RgbaImage, RenderError> {
+    pub async fn render_model(&self, id: &ResourceId, size: u32, framing: Framing) -> Result<RgbaImage, RenderError> {
         let model = self
             .caches
             .models
             .model(&self.caches.resources, id, self.diagnostics())
             .await;
-        self.model(&model, &[], size, id).await
+        self.model(&model, &[], size, framing, id).await
     }
 
     pub async fn render_blockstate(
@@ -94,7 +105,13 @@ impl Renderer {
             .await
     }
 
-    pub async fn render_item(&self, id: &ResourceId, size: u32) -> Result<RgbaImage, RenderError> {
+    pub async fn render_item(
+        &self,
+        id: &ResourceId,
+        size: u32,
+        framing: Framing,
+        resolution: FlatResolution,
+    ) -> Result<RgbaImage, RenderError> {
         let item = self
             .caches
             .items
@@ -112,10 +129,14 @@ impl Renderer {
                 let (resources, textures, grass) = (&self.caches.resources, &self.caches.textures, &self.caches.color_maps.grass);
                 layers.extend(layered::layers(resources, textures, slots, tints, grass, self.diagnostics()).await);
             }
-            return layered::composite(&layers, size).ok_or_else(|| RenderError::NoGeometry(id.clone()));
+            let scale_to = match resolution {
+                FlatResolution::Requested => Some(size),
+                FlatResolution::Native => None,
+            };
+            return layered::composite(&layers, scale_to).ok_or_else(|| RenderError::NoGeometry(id.clone()));
         }
 
-        self.item_scene(&leaves, size, id).await
+        self.item_scene(&leaves, size, framing, id).await
     }
 
     fn flat_layers<'a>(leaves: &[Leaf<'a>]) -> Option<Vec<(&'a [TextureSlot], &'a [TintSource])>> {
@@ -134,7 +155,13 @@ impl Renderer {
             .collect()
     }
 
-    async fn item_scene(&self, leaves: &[Leaf<'_>], size: u32, subject: &ResourceId) -> Result<RgbaImage, RenderError> {
+    async fn item_scene(
+        &self,
+        leaves: &[Leaf<'_>],
+        size: u32,
+        framing: Framing,
+        subject: &ResourceId,
+    ) -> Result<RgbaImage, RenderError> {
         let view =
             |display: &Option<Transform>, local: &Affine| Affine::gui(&display.unwrap_or(Transform::IDENTITY)).after(local);
 
@@ -217,8 +244,16 @@ impl Renderer {
         if quads.is_empty() {
             return Err(RenderError::NoGeometry(subject.clone()));
         }
+        Self::frame(&mut quads, size, framing);
         let depth = rasterize::needs_depth(leaves.len(), elements, &quads);
         Ok(rasterize::render_image(size, size, &mut quads, depth))
+    }
+
+    fn frame(quads: &mut [ScreenQuad], size: u32, framing: Framing) {
+        if let Framing::Fit { margin } = framing {
+            let rescale = Rescale::fit(quads, size as f32, margin);
+            quads.iter_mut().for_each(|quad| quad.rescale(rescale));
+        }
     }
 
     async fn model(
@@ -226,6 +261,7 @@ impl Renderer {
         model: &Arc<Model>,
         tints: &[TintSource],
         size: u32,
+        framing: Framing,
         subject: &ResourceId,
     ) -> Result<RgbaImage, RenderError> {
         match &model.geometry {
@@ -243,15 +279,8 @@ impl Renderer {
             Geometry::Cuboid(_) => {
                 let part = ModelPart { model: model.clone(), state: ModelState::default() };
                 let resolved_tints = shade::tint_table(tints, &self.caches.color_maps.grass);
-                self.geometry(
-                    std::slice::from_ref(&part),
-                    None,
-                    &resolved_tints,
-                    size,
-                    Framing::Gui,
-                    subject,
-                )
-                .await
+                self.geometry(std::slice::from_ref(&part), None, &resolved_tints, size, framing, subject)
+                    .await
             }
             Geometry::Empty => Err(RenderError::NoGeometry(subject.clone())),
         }
@@ -306,15 +335,10 @@ impl Renderer {
                 &mut quads,
             );
         }
-        if let Framing::Fit { margin } = framing
-            && !quads.is_empty()
-        {
-            let rescale = Rescale::fit(&quads, size as f32, margin);
-            quads.iter_mut().for_each(|quad| quad.rescale(rescale));
-        }
         if quads.is_empty() {
             return Err(RenderError::NoGeometry(subject.clone()));
         }
+        Self::frame(&mut quads, size, framing);
         let depth = rasterize::needs_depth(parts.len(), elements, &quads);
         Ok(rasterize::render_image(size, size, &mut quads, depth))
     }

@@ -7,7 +7,7 @@ public sealed interface RenderResult {
     record Png(byte[] png, @Nullable Bounds bounds) implements RenderResult {
     }
     
-    record Pixels(byte[] rgba, int size, @Nullable Bounds bounds) implements RenderResult {
+    record Pixels(byte[] rgba, int width, int height, @Nullable Bounds bounds) implements RenderResult {
     }
     
     /**

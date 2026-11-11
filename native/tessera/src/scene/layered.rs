@@ -89,7 +89,8 @@ pub async fn layers(
     layers
 }
 
-pub fn composite(layers: &[Layer], size: u32) -> Option<RgbaImage> {
+/// `scale_to` of `None` leaves result at the res of the largest layer
+pub fn composite(layers: &[Layer], scale_to: Option<u32>) -> Option<RgbaImage> {
     fn fit(sprite: &RgbaImage, width: u32, height: u32) -> Cow<'_, RgbaImage> {
         match util::image::scale(sprite, width, height) {
             Some(scaled) => Cow::Owned(scaled),
@@ -114,7 +115,8 @@ pub fn composite(layers: &[Layer], size: u32) -> Option<RgbaImage> {
         }
     }
 
-    Some(util::image::scale(&out, size, size).unwrap_or(out))
+    let scaled = scale_to.and_then(|size| util::image::scale(&out, size, size));
+    Some(scaled.unwrap_or(out))
 }
 
 pub async fn render(
@@ -126,5 +128,5 @@ pub async fn render(
     size: u32,
     diag: &Diagnostics,
 ) -> Option<RgbaImage> {
-    composite(&layers(rm, textures, slots, tints, grass, diag).await, size)
+    composite(&layers(rm, textures, slots, tints, grass, diag).await, Some(size))
 }
