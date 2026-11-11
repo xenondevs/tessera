@@ -8,21 +8,14 @@ import net.kyori.adventure.text.format.TextDecoration
 import net.minecraft.SharedConstants
 import net.minecraft.client.Minecraft
 import net.minecraft.commands.CommandBuildContext
-import net.minecraft.commands.arguments.blocks.BlockInput
-import net.minecraft.commands.arguments.blocks.BlockPredicateArgument
-import net.minecraft.commands.arguments.blocks.BlockStateArgument
 import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.world.phys.BlockHitResult
-import net.minecraft.world.phys.HitResult
 import xyz.xenondevs.tessera.capture.dump.CaptureResult
-import xyz.xenondevs.tessera.capture.dump.Capturer
 import xyz.xenondevs.tessera.capture.dump.DiscardReason
 import xyz.xenondevs.tessera.capture.dump.ItemCapturer
 import xyz.xenondevs.tessera.capture.dump.sink.BlockRecord
 import xyz.xenondevs.tessera.capture.dump.sink.RawRecordWriter
 import xyz.xenondevs.tessera.capture.dump.sink.StateRecord
 import xyz.xenondevs.tessera.capture.util.CommandFeedback
-import xyz.xenondevs.tessera.capture.util.argument
 import xyz.xenondevs.tessera.capture.util.literal
 import xyz.xenondevs.tessera.capture.util.runs
 import java.nio.file.Path
@@ -41,70 +34,70 @@ object CaptureCommand {
                     literal<S>("embed")
                         .runs { dumpEmbed(it, fb) }
                 )
-                .then(
-                    literal<S>("block")
-                        .runs { renderTargetBlock(it, fb) }
-                        .then(
-                            argument<S, BlockInput>("block", BlockStateArgument.block(ctx))
-                                .runs { dumpBlockState(it, fb) }
-                        )
-                        .then(
-                            argument<S, BlockPredicateArgument.Result>("blocks", BlockPredicateArgument.blockPredicate(ctx))
-                                .runs { dumpBlockStates(it, fb) }
-                        )
-                )
+//                .then(
+//                    literal<S>("block")
+//                        .runs { renderTargetBlock(it, fb) }
+//                        .then(
+//                            argument<S, BlockInput>("block", BlockStateArgument.block(ctx))
+//                                .runs { dumpBlockState(it, fb) }
+//                        )
+//                        .then(
+//                            argument<S, BlockPredicateArgument.Result>("blocks", BlockPredicateArgument.blockPredicate(ctx))
+//                                .runs { dumpBlockStates(it, fb) }
+//                        )
+//                )
         )
     }
-    
-    private fun <S : Any> renderTargetBlock(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
-        val client = Minecraft.getInstance()
-        val source = ctx.source
-        
-        if (client.hitResult?.type != HitResult.Type.BLOCK) {
-            fb.error(source, Component.text("You are not looking at a block!"))
-            return
-        }
-        
-        val hitPos = (client.hitResult as? BlockHitResult)?.blockPos
-        
-        if (hitPos == null) {
-            fb.error(source, Component.text("You are not looking at a block!"))
-            return
-        }
-        
-        fb.info(source, Component.text("Capturing targeted block"))
-        // TODO
-    }
-    
-    private fun <S : Any> dumpBlockState(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
-        val source = ctx.source
-        
-        val blockState = ctx.getArgument("block", BlockInput::class.java).state
-        
-        when (val result = Capturer.capture(blockState)) {
-            is CaptureResult.Captured -> {
+
+//    private fun <S : Any> renderTargetBlock(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
+//        val client = Minecraft.getInstance()
+//        val source = ctx.source
+//
+//        if (client.hitResult?.type != HitResult.Type.BLOCK) {
+//            fb.error(source, Component.text("You are not looking at a block!"))
+//            return
+//        }
+//
+//        val hitPos = (client.hitResult as? BlockHitResult)?.blockPos
+//
+//        if (hitPos == null) {
+//            fb.error(source, Component.text("You are not looking at a block!"))
+//            return
+//        }
+//
+//        fb.info(source, Component.text("Capturing targeted block"))
+//        // TODO
+//    }
+//
+//    private fun <S : Any> dumpBlockState(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
+//        val source = ctx.source
+//
+//        val blockState = ctx.getArgument("block", BlockInput::class.java).state
+//
+//        when (val result = Capturer.capture(blockState)) {
+//            is CaptureResult.Captured -> {
 //                val report = DebugModelDumper.dump(blockState, result.submissions)
 //                fb.info(source, Component.text("Wrote ${report.elements} elements to ")
 //                    .append(diskLink(report.file.parent)))
 //                if (report.skipped.isNotEmpty())
 //                    fb.error(source, Component.text("Skipped ${report.skipped}"))
-            }
-            
-            is CaptureResult.Discarded -> fb.error(source, Component.text("Discarded: ${result.reasons}"))
-            
-            CaptureResult.NoBlockEntityRenderer -> fb.info(source, Component.text("$blockState has no block entity renderer"))
-        }
-    }
-    
-    private fun <S : Any> dumpBlockStates(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
-        val source = ctx.source
-        
-        val predicate = ctx.getArgument("blocks", BlockPredicateArgument.Result::class.java)
-        
-        fb.info(source, Component.text("Capturing block state(s) matching predicate"))
-        // TODO
-    }
-    
+//            }
+//
+//            is CaptureResult.Discarded -> fb.error(source, Component.text("Discarded: ${result.reasons}"))
+//
+//            CaptureResult.NoBlockEntityRenderer -> fb.info(source, Component.text("$blockState has no block entity renderer"))
+//        }
+//    }
+//
+//    private fun <S : Any> dumpBlockStates(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
+//        val source = ctx.source
+//
+//        val predicate = ctx.getArgument("blocks", BlockPredicateArgument.Result::class.java)
+//
+//        fb.info(source, Component.text("Capturing block state(s) matching predicate"))
+//        // TODO
+//    }
+
     @OptIn(ExperimentalPathApi::class)
     private fun <S : Any> dumpEmbed(ctx: CommandContext<S>, fb: CommandFeedback<S>) {
         val directory = Minecraft.getInstance().gameDirectory.toPath().resolve("tessera-capture").resolve("embed")
