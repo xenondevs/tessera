@@ -6,7 +6,7 @@ use std::ffi::{CString, c_char};
 use std::sync::Arc;
 use std::{panic, ptr, slice};
 use tessera::resource::ResourceId;
-use tessera::scene::Framing;
+use tessera::scene::{Framing, RenderError};
 use tokio::task::JoinSet;
 
 #[repr(C)]
@@ -45,8 +45,42 @@ struct OutputOptions {
     encode: bool,
 }
 
-type ResultFn =
-    unsafe extern "C" fn(index: usize, image: *const u8, image_len: usize, bounds: *const Bounds, error: *const c_char) -> i32;
+const STATUS_OK: i32 = 0;
+const STATUS_EMPTY: i32 = 1;
+const STATUS_INVALID_REQUEST: i32 = 2;
+const STATUS_NO_VARIANT: i32 = 3;
+const STATUS_NOT_PRIMED: i32 = 4;
+
+type ResultFn = unsafe extern "C" fn(
+    index: usize,
+    status: i32,
+    image: *const u8,
+    image_len: usize,
+    bounds: *const Bounds,
+    error: *const c_char,
+) -> i32;
+
+struct Failure {
+    status: i32,
+    message: String,
+}
+
+impl Failure {
+    fn invalid_request(message: String) -> Self {
+        Self { status: STATUS_INVALID_REQUEST, message }
+    }
+}
+
+impl From<RenderError> for Failure {
+    fn from(err: RenderError) -> Self {
+        let status = match err {
+            RenderError::NoGeometry(_) => STATUS_EMPTY,
+            RenderError::NoVariant(..) => STATUS_NO_VARIANT,
+            RenderError::NotPrimed(_) => STATUS_NOT_PRIMED,
+        };
+        Self { status, message: err.to_string() }
+    }
+}
 
 impl RenderRequest {
     unsafe fn decode(&self) -> Result<(Request, OutputOptions), String> {
@@ -89,16 +123,19 @@ pub unsafe extern "C" fn tessera_render(
     count: usize,
     on_result: ResultFn,
 ) -> i32 {
-    fn deliver(on_result: ResultFn, index: usize, result: Result<(Vec<u8>, Option<Bounds>), String>) -> i32 {
+    fn deliver(on_result: ResultFn, index: usize, result: Result<(Vec<u8>, Option<Bounds>), Failure>) -> i32 {
         // SAFETY: stub lives in the jvm renderer arena which is valid during this run
         match result {
             Ok((img, bounds)) => {
                 let bounds = bounds.as_ref().map_or(ptr::null(), ptr::from_ref);
-                unsafe { on_result(index, img.as_ptr(), img.len(), bounds, ptr::null()) }
+                unsafe { on_result(index, STATUS_OK, img.as_ptr(), img.len(), bounds, ptr::null()) }
             }
-            Err(msg) => {
-                let msg = CString::new(msg.replace('\0', "\\0")).expect("\\0 was just replaced");
-                unsafe { on_result(index, ptr::null(), 0, ptr::null(), msg.as_ptr()) }
+            Err(Failure { status: STATUS_EMPTY, .. }) => unsafe {
+                on_result(index, STATUS_EMPTY, ptr::null(), 0, ptr::null(), ptr::null())
+            },
+            Err(Failure { status, message }) => {
+                let msg = CString::new(message.replace('\0', "\\0")).expect("\\0 was just replaced");
+                unsafe { on_result(index, status, ptr::null(), 0, ptr::null(), msg.as_ptr()) }
             }
         }
     }
@@ -125,12 +162,11 @@ pub unsafe extern "C" fn tessera_render(
                                 Request::BlockState { id, props, framing } => {
                                     renderer.render_blockstate(&id, &props, size, framing).await
                                 }
-                            }
-                            .map_err(|e| e.to_string());
+                            };
 
                             let image = match image {
                                 Ok(img) => img,
-                                Err(err) => return (index, Err(err)),
+                                Err(err) => return (index, Err(Failure::from(err))),
                             };
 
                             let (out, bounds) = if wants_encode {
@@ -144,7 +180,7 @@ pub unsafe extern "C" fn tessera_render(
                         });
                     }
                     Err(msg) => {
-                        if deliver(on_result, index, Err(msg)) != 0 {
+                        if deliver(on_result, index, Err(Failure::invalid_request(msg))) != 0 {
                             return 1;
                         }
                     }

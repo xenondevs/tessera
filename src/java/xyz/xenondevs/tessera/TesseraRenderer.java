@@ -45,7 +45,9 @@ public class TesseraRenderer implements AutoCloseable {
     private static final byte KIND_ITEM = 0, KIND_MODEL = 1, KIND_BLOCK_STATE = 2;
     private static final byte FRAMING_GUI = 0, FRAMING_FIT = 1;
     
-    private static final FunctionDescriptor RESULT_DESCRIPTOR = FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS);
+    private static final int STATUS_OK = 0, STATUS_EMPTY = 1, STATUS_INVALID_REQUEST = 2, STATUS_NO_VARIANT = 3, STATUS_NOT_PRIMED = 4;
+    
+    private static final FunctionDescriptor RESULT_DESCRIPTOR = FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS);
     private static final StructLayout BOUNDS = MemoryLayout.structLayout(
         JAVA_INT.withName("minX"), JAVA_INT.withName("maxX"), JAVA_INT.withName("minY"), JAVA_INT.withName("maxY")
     );
@@ -57,7 +59,7 @@ public class TesseraRenderer implements AutoCloseable {
                 Batch.class,
                 "onResult",
                 MethodType.methodType(
-                    int.class, long.class, MemorySegment.class,
+                    int.class, long.class, int.class, MemorySegment.class,
                     long.class, MemorySegment.class, MemorySegment.class
                 )
             );
@@ -125,11 +127,9 @@ public class TesseraRenderer implements AutoCloseable {
         switch (status) {
             case 0 -> {
             }
-            case 1 -> {
-                throw batch.failure != null
-                    ? batch.failure
-                    : new IllegalStateException("An unknown error occurred during rendering");
-            }
+            case 1 -> throw batch.failure != null
+                ? batch.failure
+                : new IllegalStateException("An unknown error occurred during rendering");
             default -> throw new IllegalArgumentException(TesseraNative.lastError());
         }
         return List.of(batch.results);
@@ -212,20 +212,33 @@ public class TesseraRenderer implements AutoCloseable {
             results = new RenderResult[requests.size()];
         }
         
-        int onResult(long index, MemorySegment image, long imageLen, MemorySegment bounds, MemorySegment error) {
+        int onResult(long index, int status, MemorySegment image, long imageLen, MemorySegment bounds, MemorySegment error) {
             try {
-                if (!error.equals(MemorySegment.NULL)) {
-                    results[(int) index] = new RenderResult.Failure(error.reinterpret(Long.MAX_VALUE).getString(0));
-                    return 0;
+                switch (status) {
+                    case STATUS_EMPTY -> {
+                        results[(int) index] = new RenderResult.Empty();
+                        return 0;
+                    }
+                    case STATUS_OK -> {
+                        var output = requests.get((int) index).output();
+                        var data = image.reinterpret(imageLen).toArray(JAVA_BYTE);
+                        results[(int) index] = switch (output.format()) {
+                            case RGBA -> new RenderResult.Pixels(data, output.size(), readBounds(bounds));
+                            case PNG -> new RenderResult.Png(data, readBounds(bounds));
+                        };
+                        return 0;
+                    }
+                    default -> {
+                        var kind = switch (status) {
+                            case STATUS_INVALID_REQUEST -> RenderResult.Failure.Kind.INVALID_REQUEST;
+                            case STATUS_NO_VARIANT -> RenderResult.Failure.Kind.NO_VARIANT;
+                            case STATUS_NOT_PRIMED -> RenderResult.Failure.Kind.NOT_PRIMED;
+                            default -> throw new IllegalStateException("Unknown render status: " + status);
+                        };
+                        results[(int) index] = new RenderResult.Failure(kind, error.reinterpret(Long.MAX_VALUE).getString(0));
+                        return 0;
+                    }
                 }
-                
-                var output = requests.get((int) index).output();
-                var data = image.reinterpret(imageLen).toArray(JAVA_BYTE);
-                results[(int) index] = switch (output.format()) {
-                    case RGBA -> new RenderResult.Pixels(data, output.size(), readBounds(bounds));
-                    case PNG -> new RenderResult.Png(data, readBounds(bounds));
-                };
-                return 0;
             } catch (Throwable ex) {
                 // escaping an upcall would kill the JVM
                 failure = ex;
