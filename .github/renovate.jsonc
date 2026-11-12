@@ -2,7 +2,7 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "timezone": "Europe/Berlin",
     // mondays
-    //"schedule": "* * * * 1",
+    "schedule": "* * * * 1",
     "enabledManagers": ["github-actions", "cargo", "gradle", "gradle-wrapper"],
     "minimumReleaseAge": "7 days",
     "internalChecksFilter": "strict",

@@ -15,10 +15,6 @@ more. <sup><a href="#Supported-renders">(See below)</a></sup>
   <img alt="Docs" src="https://img.shields.io/badge/docs-coming_soon-orange">
 </p>
 <br clear="all">
-<p align="center">
-  <img src=".github/assets/diff.webp" width="640" alt="Tessera and vanilla renders compared">
-</p>
-<p align="center"><sup>A pixel counts as differing if any channel is off by more than 1/255.</sup></p>
 
 ## Supported renders
 
