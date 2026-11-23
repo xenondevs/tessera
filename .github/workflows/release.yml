@@ -160,7 +160,7 @@ jobs:
           name: manifest
           path: dist
 
-      - uses: actions/setup-java@v6.2.0
+      - uses: actions/setup-java@v6.3.0
         with:
           distribution: temurin
           java-version: '25'
@@ -237,7 +237,7 @@ jobs:
           name: signed
           path: dist
 
-      - uses: actions/setup-java@v6.2.0
+      - uses: actions/setup-java@v6.3.0
         with:
           distribution: temurin
           java-version: '25'
