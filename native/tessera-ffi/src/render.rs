@@ -1,6 +1,6 @@
 use crate::encode;
 use crate::encode::Bounds;
-use crate::ffi::guard;
+use crate::ffi::{guard, upcall};
 use crate::renderer::NativeRenderer;
 use std::ffi::{CString, c_char};
 use std::sync::Arc;
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn tessera_render(
         match result {
             Ok(Rendered { data, width, height, bounds }) => {
                 let bounds = bounds.as_ref().map_or(ptr::null(), ptr::from_ref);
-                unsafe {
+                upcall(|| unsafe {
                     on_result(
                         index,
                         STATUS_OK,
@@ -156,14 +156,14 @@ pub unsafe extern "C" fn tessera_render(
                         bounds,
                         ptr::null(),
                     )
-                }
+                })
             }
-            Err(Failure { status: STATUS_EMPTY, .. }) => unsafe {
-                on_result(index, STATUS_EMPTY, ptr::null(), 0, 0, 0, ptr::null(), ptr::null())
-            },
+            Err(Failure { status: STATUS_EMPTY, .. }) => {
+                upcall(|| unsafe { on_result(index, STATUS_EMPTY, ptr::null(), 0, 0, 0, ptr::null(), ptr::null()) })
+            }
             Err(Failure { status, message }) => {
                 let msg = CString::new(message.replace('\0', "\\0")).expect("\\0 was just replaced");
-                unsafe { on_result(index, status, ptr::null(), 0, 0, 0, ptr::null(), msg.as_ptr()) }
+                upcall(|| unsafe { on_result(index, status, ptr::null(), 0, 0, 0, ptr::null(), msg.as_ptr()) })
             }
         }
     }

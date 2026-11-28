@@ -1,4 +1,4 @@
-use crate::ffi::{BoxFuture, guard, set_last_error};
+use crate::ffi::{BoxFuture, guard, set_last_error, upcall};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
 use std::future::ready;
@@ -21,7 +21,7 @@ impl JvmFileSystem {
         }
         let mut sink = Vec::new();
         // SAFETY: stub lives in the jvm pack's arena which is valid while the renderer owns a ref to the pack
-        let count = unsafe { (self.read)(path.as_ptr(), path.len(), &mut sink) };
+        let count = upcall(|| unsafe { (self.read)(path.as_ptr(), path.len(), &mut sink) });
         // -1 means the jvm threw an exception and is waiting until we're done
         let count = usize::try_from(count).ok()?;
         assert!(
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn tessera_create_jvm_pack(read: ReadFn, list: ListFn) -> 
     guard(ptr::null_mut(), || {
         let mut paths = Vec::new();
         // SAFETY: stub lives in the jvm pack's arena which is valid while the renderer owns a ref to the pack
-        if unsafe { list(&mut paths) } < 0 {
+        if upcall(|| unsafe { list(&mut paths) }) < 0 {
             return ptr::null_mut();
         }
         let fs = JvmFileSystem { read, index: paths.into_iter().collect() };

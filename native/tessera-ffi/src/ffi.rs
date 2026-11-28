@@ -31,3 +31,19 @@ pub(crate) fn guard<T>(on_panic: T, body: impl FnOnce() -> T) -> T {
 pub extern "C" fn tessera_last_error() -> *const c_char {
     LAST_ERROR.with_borrow(|e| e.as_ref().map_or(ptr::null(), |e| e.as_ptr()))
 }
+
+/// Runs a native -> JVM upcall, pre-growing the stack on Windows ([JDK-8394484](https://bugs.openjdk.org/browse/JDK-8394484))
+#[inline(always)]
+pub(crate) fn upcall<T>(body: impl FnOnce() -> T) -> T {
+    #[cfg(windows)]
+    grow_stack();
+    body()
+}
+
+#[cfg(windows)]
+#[inline(never)]
+fn grow_stack() {
+    const HEADROOM: usize = 64 * 1024;
+    let mut buf = std::mem::MaybeUninit::<[u8; HEADROOM]>::uninit();
+    std::hint::black_box(&mut buf);
+}
