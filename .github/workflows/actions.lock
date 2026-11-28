@@ -63,7 +63,7 @@ dependencies:
         repo_id: 1475009789
     'bytez1337/setup-rustup@v1.29.3':
         ref: 'v1.29.3'
-        commit: 'sha1-7103cd4a492f271436da37eb2aaabc866b2fa0d7'
+        commit: 'sha1-d02eb2e04ee2dd5240763ec04dac078ec70b0004'
         owner_id: 42820438
         repo_id: 1474992347
     'gradle/actions@v6.4.1':
