@@ -2,36 +2,52 @@ name: ci-capture
 
 on:
   pull_request:
-    paths: &capture
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths: &java
+      - 'src/java/**'
       - 'capture/**'
       - 'buildSrc/**'
       - 'gradle/**'
+      - 'build.gradle.kts'
       - 'gradle.properties'
       - 'settings.gradle.kts'
+      - 'mise.toml'
+      - 'mise.lock'
       - '.github/workflows/ci-capture.yml'
+      - '.github/workflows/release.yml'
   push:
     branches: [master]
-    paths: *capture
+    paths: *java
 
 permissions:
   contents: read
 
 jobs:
   mods:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-java@v6.2.0
+      - uses: ByteZ1337/setup-mise@v1.0.0
         with:
-          distribution: temurin
-          java-version: '25'
+          version: v2026.11.14
+          sha256: fdf945a962cd4a3217f8f6bc8d6bbbbd1c600d0b252cbd05f87652887e020baa
+
+      - name: Install Java
+        shell: bash
+        run: |
+          mise trust
+          mise install --locked java
+          java_home="$(mise where java)"
+          echo "JAVA_HOME=$java_home" >> "$GITHUB_ENV"
+          echo "$java_home/bin" >> "$GITHUB_PATH"
 
       - uses: gradle/actions/setup-gradle@v6.4.1
         with:
           validate-wrappers: true
 
       - name: Build
-        run: ./gradlew :capture:tessera-capture-fabric:jar :capture:tessera-capture-neoforge:jar
+        run: ./gradlew :jar :sourcesJar :capture:tessera-capture-fabric:jar :capture:tessera-capture-neoforge:jar

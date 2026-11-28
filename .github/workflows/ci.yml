@@ -2,8 +2,10 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: &native
       - 'native/**'
+      - 'rust-toolchain.toml'
       - '.github/workflows/ci.yml'
   push:
     branches: [master]
@@ -14,6 +16,7 @@ permissions:
 
 jobs:
   native:
+    if: ${{ !github.event.pull_request.draft }}
     strategy:
       fail-fast: false
       matrix:
@@ -24,10 +27,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust
+      - name: Install Rust toolchain
+        shell: bash
         run: |
-          rustup toolchain install stable --profile minimal --component clippy
-          rustup default stable
+          rustup show active-toolchain
+          rustup component add clippy
+
+      - uses: ByteZ1337/setup-rustup/verify@v1.29.3
 
       - uses: Swatinem/rust-cache@v2.9.3
         with:

@@ -1,20 +1,44 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "timezone": "Europe/Berlin",
-    // mondays
-    "schedule": "* * * * 1",
-    "enabledManagers": ["github-actions", "cargo", "gradle", "gradle-wrapper"],
-    "minimumReleaseAge": "7 days",
-    "internalChecksFilter": "strict",
-    "prHourlyLimit": 0,
+    "extends": [
+        "local>xenondevs/renovate"
+    ],
+    "enabledManagers": [
+        "github-actions",
+        "cargo",
+        "gradle",
+        "gradle-wrapper",
+        "mise",
+        "rust-toolchain",
+        "custom.regex"
+    ],
+    "customManagers": [
+        {
+            "description": "manylinux container images in release.yml",
+            "customType": "regex",
+            "managerFilePatterns": [
+                "/(^|/)\\.github/workflows/release\\.ya?ml$/"
+            ],
+            "matchStrings": [
+                "'(?<depName>quay\\.io/pypa/manylinux_2_28_[^:]+):(?<currentValue>[^@]+)@(?<currentDigest>sha256:[0-9a-f]{64})'"
+            ],
+            "datasourceTemplate": "docker"
+        }
+    ],
     "packageRules": [
-        { "groupName": "github actions", "matchManagers": ["github-actions"] },
-        { "groupName": "rust", "matchManagers": ["cargo"], "matchUpdateTypes": ["minor", "patch"] },
-        { "groupName": "gradle", "matchManagers": ["gradle", "gradle-wrapper"], "skipArtifactsUpdate": true },
+        {
+            "matchManagers": ["custom.regex"],
+            "matchDatasources": ["docker"],
+            "groupName": "manylinux",
+            "semanticCommitScope": "ci"
+        },
         {
             // one branch per minecraft port
             "groupName": "minecraft",
-            "matchPackageNames": ["/^net\\.fabricmc/", "/^net\\.neoforged/", "/^org\\.jetbrains\\.kotlin/"],
+            "matchPackageNames": ["/^net\\.fabricmc/", "/^net\\.neoforged/", "/^org\\.jetbrains\\.kotlin/"]
+        },
+        {
+            "matchPackageNames": ["/^net\\.fabricmc/", "/^net\\.neoforged/"],
             "minimumReleaseAge": null
         },
         { "matchPackageNames": ["/^net\\.fabricmc/"], "registryUrls": ["https://maven.fabricmc.net/"] },

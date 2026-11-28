@@ -1,0 +1,4 @@
+[tools]
+java = "temurin-25.0.5"
+"aqua:nushell/nushell" = "0.117.0"
+"aqua:sigstore/cosign" = "3.1.6"

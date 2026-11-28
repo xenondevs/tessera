@@ -1,0 +1,39 @@
+name: ci-locks
+
+on:
+  pull_request:
+    paths: &locks
+      - '.github/workflows/**'
+      - '.github/scripts/**'
+      - 'mise.toml'
+      - 'mise.lock'
+  push:
+    branches: [master]
+    paths: *locks
+
+permissions:
+  contents: read
+
+jobs:
+  locks:
+    name: Locks
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ByteZ1337/renovate/actions/verify-actions-lock@v1.0.0
+
+      - uses: ByteZ1337/setup-mise@v1.0.0
+        with:
+          version: v2026.11.14
+          sha256: fdf945a962cd4a3217f8f6bc8d6bbbbd1c600d0b252cbd05f87652887e020baa
+
+      - name: Check scripts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          MISE_SAFE=1 mise install --locked aqua:nushell/nushell
+          nu_bin="$(MISE_SAFE=1 mise which nu)"
+          "$nu_bin" --no-config-file -c 'use .github/scripts/make-manifest.nu'
